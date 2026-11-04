@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
     <cloud-backup>
-        <!-- Never back up the encrypted prefs (contains the backend token) or the runtime -->
+        <!-- Never back up the encrypted prefs (contains the backend token) or the runtime.
+             The cache dir is not a valid rule domain: Android already excludes it from
+             auto backup, so there is nothing to declare here. -->
         <exclude domain="sharedpref" path="." />
         <exclude domain="file" path="runtime/" />
-        <exclude domain="cache" path="." />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="." />
