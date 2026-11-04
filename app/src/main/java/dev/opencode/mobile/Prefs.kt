@@ -22,6 +22,7 @@ object Prefs {
     private const val KEY_BACKEND_PORT = "backend_port"
     private const val KEY_EXTRACT_STAMP = "extract_stamp"
     private const val KEY_LAST_UPDATE_CHECK = "last_update_check"
+    private const val KEY_PEERS_JSON = "peers_json"
 
     fun init(context: Context) {
         if (::prefs.isInitialized) return
@@ -81,4 +82,9 @@ object Prefs {
     var lastUpdateCheck: Long
         get() = prefs.getLong(KEY_LAST_UPDATE_CHECK, 0L)
         set(v) = prefs.edit().putLong(KEY_LAST_UPDATE_CHECK, v).apply()
+
+    /** Serialized list of paired upstream OpenCode servers (see sync.PeerStore). */
+    var peersJson: String
+        get() = prefs.getString(KEY_PEERS_JSON, "[]") ?: "[]"
+        set(v) = prefs.edit().putString(KEY_PEERS_JSON, v).apply()
 }

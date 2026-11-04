@@ -4,9 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       opencode_version:
-        description: "opencode CLI version to bundle"
+        description: "opencode CLI version to bundle (ignored if fork_binary_url is set)"
         required: false
         default: "2.2.5"
+      fork_binary_url:
+        description: "Direct URL to a fork-built linux-arm64-musl opencode binary (with UpstreamSync). Leave empty for stock npm build."
+        required: false
+        default: ""
   push:
     tags:
       - "v*"
@@ -33,6 +37,7 @@ jobs:
       - name: Prepare backend assets
         env:
           OPENCODE_VERSION: ${{ github.event.inputs.opencode_version || '2.2.5' }}
+          OPENCODE_BINARY_URL: ${{ github.event.inputs.fork_binary_url || '' }}
         run: bash scripts/prepare-assets.sh
 
       - name: Decode keystore (if provided)

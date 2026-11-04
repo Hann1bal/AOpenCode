@@ -95,4 +95,6 @@ dependencies {
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    // QR scanning for `opencode pair` pairing codes
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
 }

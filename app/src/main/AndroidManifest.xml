@@ -17,6 +17,10 @@
     <!-- Self-update: install downloaded APK -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- Pairing: scan the `opencode pair` QR code -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
     <!-- Package visibility for opening external links in a browser (Android 11+) -->
     <queries>
         <intent>
@@ -54,6 +58,12 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
             android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".PeersActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
+            android:label="@string/peers_title" />
 
         <service
             android:name=".BackendService"

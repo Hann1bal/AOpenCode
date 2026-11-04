@@ -26,9 +26,17 @@ mkdir -p "$OUT_DIR"
 
 # --- 1. opencode musl binary -------------------------------------------------
 echo "==> [1/4] opencode linux-arm64-musl"
-( cd "$TMP" && npm pack "@opencode/cli-linux-arm64-musl@${OPENCODE_VERSION}" >/dev/null )
-tar xzf "$TMP"/opencode-cli-linux-arm64-musl-*.tgz -C "$TMP"
-cp "$TMP/package/bin/opencode" "$OUT_DIR/opencode"
+if [ -n "${OPENCODE_BINARY_URL:-}" ]; then
+    # Fork build: fetch the linux-arm64-musl binary produced by the opencode
+    # fork's fork-build workflow (includes the UpstreamSync module).
+    echo "    source: OPENCODE_BINARY_URL"
+    curl -fsSL "${OPENCODE_BINARY_URL}" -o "$OUT_DIR/opencode"
+else
+    echo "    source: npm @opencode/cli-linux-arm64-musl@${OPENCODE_VERSION}"
+    ( cd "$TMP" && npm pack "@opencode/cli-linux-arm64-musl@${OPENCODE_VERSION}" >/dev/null )
+    tar xzf "$TMP"/opencode-cli-linux-arm64-musl-*.tgz -C "$TMP"
+    cp "$TMP/package/bin/opencode" "$OUT_DIR/opencode"
+fi
 chmod 755 "$OUT_DIR/opencode"
 
 # --- 2. Alpine package index -------------------------------------------------

@@ -2,6 +2,7 @@ package dev.opencode.mobile
 
 import android.content.Context
 import android.util.Log
+import dev.opencode.mobile.sync.PeerStore
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.InetAddress
@@ -125,6 +126,14 @@ object BackendManager {
         env.remove("http_proxy")
         env.remove("https_proxy")
         env["NO_PROXY"] = "127.0.0.1,localhost"
+
+        // Live session sharing: if a peer is paired, the forked backend follows
+        // its durable event log and mirrors the upstream sessions locally.
+        PeerStore.active()?.let { peer ->
+            env["OPENCODE_UPSTREAM_URL"] = peer.baseUrl
+            env["OPENCODE_UPSTREAM_TOKEN"] = peer.token
+            env["OPENCODE_UPSTREAM_ID"] = peer.id
+        }
 
         process = pb.start()
         port = p

@@ -155,6 +155,9 @@ class MainActivity : AppCompatActivity() {
         binding.settingsButton.setOnClickListener {
             startActivity(Intent(this, OnboardingActivity::class.java).putExtra("edit", true))
         }
+        binding.peersButton.setOnClickListener {
+            startActivity(Intent(this, PeersActivity::class.java))
+        }
     }
 
     private fun wakeBackendAndLoad() {
