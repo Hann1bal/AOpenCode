@@ -10,6 +10,7 @@ import android.view.View
 import android.webkit.HttpAuthHandler
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.OnBackPressedCallback
@@ -95,6 +96,21 @@ class MainActivity : AppCompatActivity() {
                 binding.progressOverlay.visibility = View.GONE
                 binding.errorOverlay.visibility = View.GONE
                 binding.swipeRefresh.isRefreshing = false
+            }
+
+            /**
+             * Installs the browser-API shim for older Android System WebView builds.
+             * Only the HTML document is rewritten; subresources and the SSE stream
+             * stay on the WebView's native path so nothing gets buffered.
+             */
+            override fun shouldInterceptRequest(
+                view: WebView?,
+                request: WebResourceRequest?
+            ): WebResourceResponse? {
+                val url = request?.url ?: return null
+                val host = url.host
+                if (host != "127.0.0.1" && host != "localhost") return null
+                return WebViewShim.handle(url, request.isForMainFrame)
             }
 
             override fun onReceivedHttpAuthRequest(

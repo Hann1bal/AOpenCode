@@ -61,6 +61,8 @@ class PeersActivity : AppCompatActivity() {
 
         binding.pasteButton.setOnClickListener { showPasteDialog() }
 
+        binding.workLocallyButton.setOnClickListener { confirmWorkLocally() }
+
         binding.peerList.setOnItemClickListener { _, _, position, _ ->
             showPeerMenu(peerAt(position))
         }
@@ -152,6 +154,8 @@ class PeersActivity : AppCompatActivity() {
         } else {
             getString(R.string.peers_mode_following, active.name)
         }
+        binding.workLocallyButton.visibility =
+            if (active == null) android.view.View.GONE else android.view.View.VISIBLE
     }
 
     private fun label(peer: Peer): String {

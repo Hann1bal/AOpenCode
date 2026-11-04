@@ -35,8 +35,8 @@
     <string name="model_manual_note">Typing is still allowed: you can pick an id the endpoint does not list.</string>
 
     <!-- Peers / live session sharing -->
-    <string name="peers_title">Synced servers</string>
-    <string name="peers_subtitle">Pair with a home OpenCode server to mirror its sessions live. Run `opencode pair` on the home machine.</string>
+    <string name="peers_title">Working mode</string>
+    <string name="peers_subtitle">Choose whether this device runs its own agent or mirrors a home OpenCode server. Pairing is optional — the local agent needs no server of anyone else\'s.</string>
     <string name="peers_empty">No servers paired yet. Scan a pairing QR or paste a pairing link.</string>
     <string name="peers_scan_qr">Scan pairing QR</string>
     <string name="peers_paste_link">Paste pairing link</string>

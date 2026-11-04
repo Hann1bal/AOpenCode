@@ -32,6 +32,17 @@
         android:textColor="#FFFFFFFF"
         android:textSize="13sp" />
 
+    <!-- First-class exit from mirroring. Without this, going back to the local
+         agent looked like it required deleting the pairing. -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/workLocallyButton"
+        style="@style/Widget.Material3.Button.OutlinedButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/work_locally"
+        android:visibility="gone" />
+
     <ListView
         android:id="@+id/peerList"
         android:layout_width="match_parent"
