@@ -6,6 +6,10 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// Single source of truth for the W^X workaround, also exposed to the app so a
+// launch failure can report which targetSdk it ran under.
+val targetSdkLevel = 28
+
 android {
     namespace = "dev.opencode.mobile"
     compileSdk = 35
@@ -13,7 +17,15 @@ android {
     defaultConfig {
         applicationId = "dev.opencode.mobile"
         minSdk = 26          // Android 8.0+
-        targetSdk = 35
+        // W^X: apps targeting API 29+ cannot execve() files inside their own home
+        // directory, which is exactly how the bundled musl runtime is launched.
+        // The alternative (nativeLibraryDir) only accepts lib*.so names, so the
+        // musl loader and its SONAME-named libraries cannot live there. Staying
+        // at 28 keeps exec working — the same route Termux takes. compileSdk is
+        // unaffected, so we still build against 35 APIs.
+        targetSdk = targetSdkLevel
+
+        buildConfigField("int", "TARGET_SDK", targetSdkLevel.toString())
         versionCode = 1
         versionName = "1.0.0"
 

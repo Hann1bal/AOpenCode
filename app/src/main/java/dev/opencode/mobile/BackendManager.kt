@@ -135,11 +135,33 @@ object BackendManager {
             env["OPENCODE_UPSTREAM_ID"] = peer.id
         }
 
-        process = pb.start()
+        process = try {
+            pb.start()
+        } catch (e: Exception) {
+            throw IllegalStateException(describeLaunchFailure(loader, bin, dir, e), e)
+        }
         port = p
         Prefs.backendPort = p
         Log.i(TAG, "Backend started pid=${process?.hashCode()} port=$p")
         return p
+    }
+
+    /**
+     * A bare `Cannot run program ...` cannot be diagnosed from a notification: the
+     * same wording covers EACCES (W^X policy), ENOEXEC (wrong arch / corrupt ELF)
+     * and ENOENT (extraction never ran). Report the file state and the target SDK
+     * so the cause is readable on the device itself.
+     */
+    private fun describeLaunchFailure(loader: File, bin: File, dir: File, e: Exception): String {
+        fun probe(f: File): String =
+            "${f.name}: exists=${f.exists()} canExecute=${f.canExecute()} len=${if (f.exists()) f.length() else -1}"
+        return buildString {
+            append("Backend launch failed: ").append(e.message).append('\n')
+            append(probe(loader)).append(" | ").append(probe(bin)).append('\n')
+            append("dir=").append(dir.absolutePath)
+            append(" targetSdk=").append(BuildConfig.TARGET_SDK)
+            append(" abi=").append(android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "?")
+        }
     }
 
     /** Quick liveness probe of the HTTP server. */
