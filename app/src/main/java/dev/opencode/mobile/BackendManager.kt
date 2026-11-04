@@ -112,7 +112,7 @@ object BackendManager {
         val env = pb.environment()
         env["HOME"] = home.absolutePath
         env["XDG_CONFIG_HOME"] = File(home, ".config").absolutePath
-        env["XDG_DATA_HOME"] = File(home, ".local", "share").absolutePath
+        env["XDG_DATA_HOME"] = File(File(home, ".local"), "share").absolutePath
         env["XDG_CACHE_HOME"] = File(home, ".cache").absolutePath
         env["TMPDIR"] = ctx.cacheDir.absolutePath
         env["PATH"] = dir.absolutePath + ":/system/bin:/bin"

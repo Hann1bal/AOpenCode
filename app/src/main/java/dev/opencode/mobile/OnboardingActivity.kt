@@ -151,7 +151,7 @@ class OnboardingActivity : AppCompatActivity() {
             .put("models", models)
         val providers = JSONObject().put("custom", provider)
         val config = JSONObject()
-            .put("$schema", "https://opencode.ai/config.json")
+            .put("\$schema", "https://opencode.ai/config.json")
             .put("providers", providers)
 
         java.io.File(configDir, "opencode.json").writeText(config.toString(2))
