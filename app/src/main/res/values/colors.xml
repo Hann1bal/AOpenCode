@@ -3,4 +3,13 @@
     <color name="opencode_primary">#1B8A5A</color>
     <color name="opencode_on_primary">#FFFFFF</color>
     <color name="ic_launcher_background">#0E1512</color>
+
+    <!-- Setup screen runs on a warm amber accent so it reads as a distinct,
+         one-time flow rather than the daily-driver green. -->
+    <color name="setup_accent">#D9922F</color>
+    <color name="setup_on_accent">#2A1B04</color>
+    <color name="setup_accent_soft">#3A2A12</color>
+    <color name="setup_ok">#4CAF7D</color>
+    <color name="setup_error">#E57373</color>
+    <color name="setup_neutral">#9AA0A6</color>
 </resources>

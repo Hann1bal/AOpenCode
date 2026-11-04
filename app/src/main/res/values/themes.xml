@@ -7,4 +7,14 @@
         <item name="android:navigationBarColor">?android:attr/colorBackground</item>
         <item name="android:windowLightStatusBar" tools:targetApi="m">true</item>
     </style>
+
+    <!-- Setup flow: warm amber accent, so configuring the endpoint does not look
+         like the daily-driver screen. Applied to OnboardingActivity only. -->
+    <style name="Theme.OpenCode.Onboarding" parent="Theme.OpenCode">
+        <item name="colorPrimary">@color/setup_accent</item>
+        <item name="colorOnPrimary">@color/setup_on_accent</item>
+        <item name="colorSecondary">@color/setup_accent</item>
+        <item name="colorOnSecondary">@color/setup_on_accent</item>
+        <item name="colorSurfaceContainerHigh">@color/setup_accent_soft</item>
+    </style>
 </resources>

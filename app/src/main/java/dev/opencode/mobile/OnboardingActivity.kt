@@ -2,25 +2,33 @@ package dev.opencode.mobile
 
 import android.content.Intent
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
+import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import dev.opencode.mobile.databinding.ActivityOnboardingBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
+import java.io.File
 
 /**
- * First-run (or "edit") screen: configure the inference endpoint, key and model,
- * then write the opencode config + auth files into the backend's XDG home.
+ * First-run (or "edit") screen: point the app at an inference endpoint, pick a
+ * model from the ones that endpoint actually serves, then write the opencode
+ * config + auth files into the backend's XDG home.
  */
 class OnboardingActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityOnboardingBinding
+
+    /** Catalog last fetched, and the endpoint it belongs to. */
+    private var models: List<String> = emptyList()
+    private var loadedFor: String? = null
+    private var loading = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,18 +45,99 @@ class OnboardingActivity : AppCompatActivity() {
             }
         }
 
+        setupModelField()
         binding.testButton.setOnClickListener { runTest() }
         binding.saveButton.setOnClickListener { saveAndFinish() }
+        binding.reloadModels.setOnClickListener { loadModels(show = true) }
+    }
+
+    private fun currentBase(): String = binding.serverUrl.text.toString().trim().trimEnd('/')
+
+    private fun currentKey(): String =
+        binding.apiKey.text.toString().trim().ifEmpty { Prefs.apiKey }
+
+    private fun fingerprint(base: String, key: String): String = "$base|$key"
+
+    private fun setupModelField() {
+        // Focusing the field is the natural moment to fetch: the endpoint and key
+        // are filled in by then, and the list is cached for subsequent opens.
+        binding.modelId.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) loadModels(show = true)
+        }
+
+        val invalidate = object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                // The cached catalog belongs to one endpoint. Drop the fingerprint
+                // so a stale list can never be saved against a different server.
+                loadedFor = null
+            }
+        }
+        binding.serverUrl.addTextChangedListener(invalidate)
+        binding.apiKey.addTextChangedListener(invalidate)
+    }
+
+    private fun loadModels(show: Boolean) {
+        if (loading) return
+        val base = currentBase()
+        val key = currentKey()
+        if (base.isEmpty() || !base.startsWith("http")) {
+            setStatus(getString(R.string.models_need_endpoint), R.color.setup_neutral)
+            return
+        }
+
+        val fp = fingerprint(base, key)
+        if (models.isNotEmpty() && loadedFor == fp) {
+            if (show) binding.modelId.showDropDown()
+            return
+        }
+
+        loading = true
+        binding.modelProgress.visibility = View.VISIBLE
+        setStatus(getString(R.string.models_status_loading), R.color.setup_neutral)
+
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) { ModelDiscovery.fetch(base, key) }
+            loading = false
+            binding.modelProgress.visibility = View.GONE
+
+            when (result) {
+                is ModelDiscovery.Result.Success -> {
+                    models = result.models
+                    loadedFor = fp
+                    binding.modelId.setSimpleItems(models.toTypedArray())
+                    setStatus(getString(R.string.models_status_loaded, models.size), R.color.setup_ok)
+                    if (binding.modelId.text.isNullOrEmpty()) {
+                        binding.modelId.setText(models.first(), false)
+                    }
+                    if (show) binding.modelId.showDropDown()
+                }
+
+                is ModelDiscovery.Result.Failure -> {
+                    setStatus(
+                        getString(R.string.models_status_failed, result.message) +
+                            " " + getString(R.string.model_manual_note),
+                        R.color.setup_error,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun setStatus(text: String, colorRes: Int) {
+        binding.modelStatus.text = text
+        binding.modelStatus.setTextColor(ContextCompat.getColor(this, colorRes))
     }
 
     private fun collectInputs(): Triple<String, String, String>? {
-        val base = binding.serverUrl.text.toString().trim().trimEnd('/')
-        val key = binding.apiKey.text.toString().trim().ifEmpty { Prefs.apiKey }
+        val base = currentBase()
+        val key = currentKey()
         val model = binding.modelId.text.toString().trim()
         val name = binding.providerName.text.toString().trim().ifEmpty { "My Server" }
 
         if (base.isEmpty() || !base.startsWith("http")) {
-            binding.serverUrl.error = "Enter a full URL, e.g. https://example.com/v1"
+            binding.serverUrl.error = "Enter a full URL, e.g. http://192.168.1.10:8080/v1"
             return null
         }
         if (key.isEmpty()) {
@@ -56,7 +145,7 @@ class OnboardingActivity : AppCompatActivity() {
             return null
         }
         if (model.isEmpty()) {
-            binding.modelId.error = "Model id is required"
+            binding.modelId.error = "Pick a model from the list or type its id"
             return null
         }
         return Triple(base, key, model)
@@ -79,7 +168,7 @@ class OnboardingActivity : AppCompatActivity() {
 
     private fun probeEndpoint(base: String, key: String): Pair<String, Boolean> {
         return try {
-            val conn = URL("$base/models").openConnection() as HttpURLConnection
+            val conn = java.net.URL("$base/models").openConnection() as java.net.HttpURLConnection
             conn.connectTimeout = 8000
             conn.readTimeout = 8000
             conn.requestMethod = "GET"
@@ -106,9 +195,14 @@ class OnboardingActivity : AppCompatActivity() {
         Prefs.apiKey = key
         Prefs.modelId = model
 
+        // Register the whole fetched catalog, not just the picked model, so the
+        // backend can switch models without reconfiguring. Only trust the cache
+        // when it was fetched against the endpoint we are about to save.
+        val catalog = if (loadedFor == fingerprint(base, key)) models else emptyList()
+
         lifecycleScope.launch {
             try {
-                withContext(Dispatchers.IO) { writeOpencodeConfig(base, key, model, name) }
+                withContext(Dispatchers.IO) { writeOpencodeConfig(base, key, model, name, catalog) }
                 Prefs.configured = true
                 startService(
                     Intent(this@OnboardingActivity, BackendService::class.java)
@@ -132,34 +226,39 @@ class OnboardingActivity : AppCompatActivity() {
      *   $XDG_CONFIG_HOME/opencode/opencode.json
      *   $XDG_CONFIG_HOME/opencode/auth.json
      */
-    private fun writeOpencodeConfig(base: String, key: String, model: String, name: String) {
-        val configDir = java.io.File(
-            BackendManager.homeDir(this),
-            ".config/opencode"
-        )
+    private fun writeOpencodeConfig(
+        base: String,
+        key: String,
+        model: String,
+        name: String,
+        catalog: List<String>,
+    ) {
+        val configDir = File(BackendManager.homeDir(this), ".config/opencode")
         configDir.mkdirs()
 
         val settings = JSONObject().put("baseURL", base)
-        val modelEntry = JSONObject()
-            .put("modelID", model)
-            .put("name", model)
-        val models = JSONObject().put(model, modelEntry)
+
+        val modelsJson = JSONObject()
+        for (id in (listOf(model) + catalog).filter { it.isNotBlank() }.distinct()) {
+            modelsJson.put(id, JSONObject().put("modelID", id).put("name", id))
+        }
+
         val provider = JSONObject()
             .put("name", name)
             .put("package", "aisdk:@ai-sdk/openai-compatible")
             .put("settings", settings)
-            .put("models", models)
-        val providers = JSONObject().put("custom", provider)
+            .put("models", modelsJson)
+
         val config = JSONObject()
             .put("\$schema", "https://opencode.ai/config.json")
-            .put("providers", providers)
+            .put("providers", JSONObject().put("custom", provider))
 
-        java.io.File(configDir, "opencode.json").writeText(config.toString(2))
+        File(configDir, "opencode.json").writeText(config.toString(2))
 
         val auth = JSONObject().put(
             "custom",
             JSONObject().put("type", "api").put("key", key)
         )
-        java.io.File(configDir, "auth.json").writeText(auth.toString(2))
+        File(configDir, "auth.json").writeText(auth.toString(2))
     }
 }
