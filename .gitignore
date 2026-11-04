@@ -1,0 +1,17 @@
+# Build outputs
+.gradle/
+build/
+app/build/
+local.properties
+*.iml
+.idea/
+.DS_Store
+
+# Backend assets are fetched by scripts/prepare-assets.sh in CI — do NOT commit them
+app/src/main/assets/runtime/
+*.tgz
+
+# Keystore material
+*.keystore
+*.jks
+*.keystore.b64

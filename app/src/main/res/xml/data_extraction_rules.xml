@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup>
+        <!-- Never back up the encrypted prefs (contains the backend token) or the runtime -->
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="file" path="runtime/" />
+        <exclude domain="cache" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="file" path="runtime/" />
+    </device-transfer>
+</data-extraction-rules>

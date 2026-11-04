@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OpenCode</string>
+
+    <!-- Main -->
+    <string name="starting_backend">Starting local OpenCode backend…</string>
+    <string name="offline_banner">Backend disconnected. Pull down to reconnect.</string>
+    <string name="error_title">Can\'t reach the backend</string>
+    <string name="error_body">The local OpenCode server did not start. Check the inference endpoint settings, then retry.</string>
+    <string name="retry">Retry</string>
+    <string name="edit_settings">Edit settings</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_title">Set up OpenCode</string>
+    <string name="onboarding_subtitle">Connect the app to your own inference endpoint. Everything runs against your server — no third-party services.</string>
+    <string name="provider_name_hint">Provider name (e.g. My Server)</string>
+    <string name="server_url_hint">Base URL (e.g. https://example.com/v1)</string>
+    <string name="api_key_hint">API key</string>
+    <string name="model_id_hint">Model id (e.g. qwen3.8-flash)</string>
+    <string name="test_connection">Test connection</string>
+    <string name="save_and_start">Save &amp; start</string>
+    <string name="onboarding_footer">Your key is stored encrypted on this device only. The backend binds to 127.0.0.1 and never accepts external connections.</string>
+</resources>

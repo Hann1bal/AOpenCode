@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Terminal prompt glyph, centered in the safe zone -->
+    <group
+        android:scaleX="1.0"
+        android:scaleY="1.0"
+        android:translateX="0"
+        android:translateY="0">
+        <path
+            android:fillColor="#3DDC84"
+            android:pathData="M34,40 L46,54 L34,68 L39,73 L56,54 L39,35 Z" />
+        <path
+            android:fillColor="#3DDC84"
+            android:pathData="M58,66 L58,72 L76,72 L76,66 Z" />
+    </group>
+</vector>

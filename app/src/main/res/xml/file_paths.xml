@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Update APKs are downloaded here -->
+    <cache-path name="updates" path="updates/" />
+    <!-- Share/export files -->
+    <cache-path name="shared" path="shared/" />
+</paths>

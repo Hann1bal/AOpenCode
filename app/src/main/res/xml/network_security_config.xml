@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Security posture:
+  - The local opencode backend runs on 127.0.0.1 over cleartext HTTP. That never
+    leaves the device, so cleartext there is acceptable.
+  - The inference endpoint is expected to be HTTPS. Cleartext is additionally
+    permitted for private/CGNAT ranges (Tailscale 100.64/10, RFC1918) so that a
+    self-hosted endpoint on a tailnet works out of the box. If your endpoint is
+    public, use HTTPS and remove those subnet blocks.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- Local backend: loopback only -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+
+    <!-- Self-hosted inference over a private network / tailnet (cleartext allowed).
+         Remove this block if you enforce HTTPS end-to-end. -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true" subnet="10.0.0.0">10</domain>
+        <domain includeSubdomains="true" subnet="100.64.0.0">100.64</domain>
+        <domain includeSubdomains="true" subnet="172.16.0.0">172.16</domain>
+        <domain includeSubdomains="true" subnet="192.168.0.0">192.168</domain>
+    </domain-config>
+</network-security-config>
