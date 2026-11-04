@@ -21,6 +21,10 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # Rolling release asset from the fork's fork-build workflow. Contains the
+      # UpstreamSync module; the stock npm binary does not.
+      FORK_BINARY_URL: https://github.com/Hann1bal/opencode-mesh/releases/download/fork-sync-dev/opencode
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -42,8 +46,31 @@ jobs:
       - name: Prepare backend assets
         env:
           OPENCODE_VERSION: ${{ github.event.inputs.opencode_version || '2.2.5' }}
-          OPENCODE_BINARY_URL: ${{ github.event.inputs.fork_binary_url || '' }}
+          # github.event.inputs is only populated for workflow_dispatch. On a tag
+          # push it is empty, which used to silently fall through to the stock npm
+          # binary — an APK with no UpstreamSync. Default to the fork instead.
+          OPENCODE_BINARY_URL: ${{ github.event.inputs.fork_binary_url || env.FORK_BINARY_URL }}
         run: bash scripts/prepare-assets.sh
+
+      # A silent fallback to the stock binary produces an APK that installs and
+      # runs but cannot sync, so assert the bundled file really is the fork build.
+      - name: Verify bundled backend is the fork build
+        run: |
+          BUNDLED=app/src/main/assets/runtime/opencode
+          BUNDLED_SIZE=$(stat -c%s "$BUNDLED")
+          FORK_SIZE=$(curl -sIL "$FORK_BINARY_URL" | tr -d '\r' \
+            | awk 'tolower($1)=="content-length:" {v=$2} END {print v}')
+          echo "bundled=$BUNDLED_SIZE fork=$FORK_SIZE"
+          if [ -z "$FORK_SIZE" ]; then
+            echo "::error::Could not read the fork binary size from $FORK_BINARY_URL"
+            exit 1
+          fi
+          if [ "$BUNDLED_SIZE" != "$FORK_SIZE" ]; then
+            echo "::error::Bundled backend is $BUNDLED_SIZE bytes but the fork binary is $FORK_SIZE."
+            echo "::error::That is the stock npm build: live session sharing would be missing."
+            exit 1
+          fi
+          echo "OK: bundled backend matches the fork binary ($FORK_SIZE bytes)"
 
       - name: Decode keystore (if provided)
         if: ${{ env.KEYSTORE_BASE64 != '' }}
