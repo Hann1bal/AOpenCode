@@ -1,6 +1,7 @@
 package dev.opencode.mobile
 
 import android.content.Context
+import android.util.Base64
 import android.util.Log
 import dev.opencode.mobile.sync.PeerStore
 import java.io.File
@@ -37,6 +38,11 @@ object BackendManager {
      */
     @Volatile
     var lastError: String? = null
+        private set
+
+    /** Outcome of the most recent health probe, for the failure report. */
+    @Volatile
+    var lastProbe: String? = null
         private set
 
     fun runtimeDir(ctx: Context): File = File(ctx.filesDir, "runtime").also { it.mkdirs() }
@@ -200,7 +206,8 @@ object BackendManager {
         parts.add(lastError?.let { "Launch error:\n$it" } ?: "No launch exception was raised.")
         parts.add(
             if (isRunning()) {
-                "Process: alive, but HTTP never answered on port $port"
+                "Process: alive on port $port, but the health probe never passed " +
+                    "(last probe: ${lastProbe ?: "none"})"
             } else {
                 "Process: not running"
             }
@@ -221,13 +228,27 @@ object BackendManager {
         if (p <= 0) return false
         return try {
             val conn = URL("http://127.0.0.1:$p/").openConnection() as HttpURLConnection
-            conn.connectTimeout = 1500
-            conn.readTimeout = 1500
+            conn.connectTimeout = 2000
+            conn.readTimeout = 3000
             conn.requestMethod = "GET"
+            // The server enforces Basic auth as soon as a password is configured,
+            // and its username is hardcoded to "opencode" (ServerAuth.Config).
+            // Sending no header meant every probe drew a 401, which the old
+            // `code in 200..399` test read as "server not started".
+            val raw = "opencode:" + Prefs.backendToken
+            conn.setRequestProperty(
+                "Authorization",
+                "Basic " + Base64.encodeToString(raw.toByteArray(), Base64.NO_WRAP)
+            )
             val code = conn.responseCode
+            lastProbe = "HTTP $code"
             conn.disconnect()
-            code in 200..399
-        } catch (_: Exception) {
+            // Any HTTP answer proves the listener is alive. 401/403 are included
+            // deliberately: the WebView satisfies the challenge itself, so a
+            // credentials mismatch must not look like a dead backend.
+            code in 200..499
+        } catch (e: Exception) {
+            lastProbe = "${e.javaClass.simpleName}: ${e.message}"
             false
         }
     }
