@@ -63,6 +63,8 @@ class PeersActivity : AppCompatActivity() {
 
         binding.workLocallyButton.setOnClickListener { confirmWorkLocally() }
 
+        binding.batteryButton.setOnClickListener { requestBatteryExemption() }
+
         binding.peerList.setOnItemClickListener { _, _, position, _ ->
             showPeerMenu(peerAt(position))
         }
@@ -156,7 +158,35 @@ class PeersActivity : AppCompatActivity() {
         }
         binding.workLocallyButton.visibility =
             if (active == null) android.view.View.GONE else android.view.View.VISIBLE
+        binding.batteryWarning.visibility =
+            if (BackendManager.batteryOptimized(this)) android.view.View.VISIBLE else android.view.View.GONE
+        binding.engineInfo.text = getString(R.string.engine_info, BackendManager.webViewVersion())
     }
+
+    /**
+     * Asks the ROM to stop restricting us. The direct dialog is the short path on
+     * stock Android; Huawei's own “App launch” management is a separate setting,
+     * so the copy points there and the fallbacks land on a settings screen rather
+     * than dead-ending when an intent is missing from the ROM.
+     */
+    private fun requestBatteryExemption() {
+        val direct = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+        if (launchSafely(direct)) return
+        val scoped = Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.fromParts("package", packageName, null),
+        )
+        if (launchSafely(scoped)) return
+        Toast.makeText(this, R.string.battery_open, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun launchSafely(intent: Intent): Boolean =
+        try {
+            startActivity(intent)
+            true
+        } catch (e: Exception) {
+            false
+        }
 
     private fun label(peer: Peer): String {
         val mark = if (peer.active) "● " else "○ "

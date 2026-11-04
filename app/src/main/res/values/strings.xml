@@ -68,4 +68,10 @@
     <string name="camera_unavailable_title">Camera not available</string>
     <string name="camera_unavailable_body">Camera permission is turned off for this app, so the scanner cannot open. You can enable it in system settings, or just paste the pairing link — the camera is optional.</string>
     <string name="open_settings">Open settings</string>
+
+    <!-- Background survival on aggressive ROMs -->
+    <string name="battery_title">Background may be killed</string>
+    <string name="battery_body">Huawei, Xiaomi and similar ROMs freeze background apps to save battery, which stops the local OpenCode server while it is supposed to be running. Allow unrestricted background activity for this app. On HarmonyOS/EMUI also open Battery → App launch and set OpenCode to “Manage manually”.</string>
+    <string name="battery_open">Open battery settings</string>
+    <string name="engine_info">UI engine: %1$s</string>
 </resources>

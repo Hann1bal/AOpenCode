@@ -1,6 +1,7 @@
 package dev.opencode.mobile
 
 import android.content.Context
+import android.os.PowerManager
 import android.util.Base64
 import android.util.Log
 import dev.opencode.mobile.sync.PeerStore
@@ -196,10 +197,30 @@ object BackendManager {
     }
 
     /**
+     * The engine the UI runs on, which is what decides which JS APIs exist. On
+     * Huawei/HarmonyOS there is no Play Store, so the WebView never moves forward
+     * and this is the number that explains a missing-API TypeError.
+     */
+    fun webViewVersion(): String {
+        val pkg = android.webkit.WebView.getCurrentWebViewPackage()
+        return if (pkg == null) "unknown" else "${pkg.packageName} ${pkg.versionName}"
+    }
+
+    /**
+     * Whether the ROM is free to freeze us in the background. Huawei's aggressive
+     * management kills the server process, which looks like a random backend death.
+     */
+    fun batteryOptimized(ctx: Context): Boolean {
+        val pm = ctx.getSystemService(Context.POWER_SERVICE) as PowerManager
+        return !pm.isIgnoringBatteryOptimizations(ctx.packageName)
+    }
+
+    /**
      * Everything needed to diagnose a failed start as one string: the launch
-     * error if exec threw, whether the process is alive, and the backend's own
-     * output. A process that starts but never binds is a different failure from
-     * one that cannot exec at all, and this distinguishes them.
+     * error if exec threw, whether the process is alive, the JS engine the UI is
+     * running on, and whether the ROM is free to freeze us. A process that
+     * starts but never binds is a different failure from one that cannot exec at
+     * all, and this distinguishes them.
      */
     fun failureReport(ctx: Context): String {
         val parts = mutableListOf<String>()
@@ -211,6 +232,13 @@ object BackendManager {
             } else {
                 "Process: not running"
             }
+        )
+        parts.add("UI engine: ${webViewVersion()}")
+        parts.add(
+            if (batteryOptimized(ctx))
+                "Battery optimization: ACTIVE — the ROM may freeze or kill the backend"
+            else
+                "Battery optimization: exempt"
         )
         val tail = logTail(ctx)
         parts.add(
