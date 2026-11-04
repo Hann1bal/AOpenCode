@@ -61,6 +61,15 @@ object PeerStore {
 
     fun active(): Peer? = all().firstOrNull { it.active }
 
+    /**
+     * Stop following every upstream without forgetting the pairings. Pairing
+     * tokens live ~30 days, so clearing the flag is cheap to undo — deleting the
+     * peer is not, and forces a fresh `opencode pair` round trip.
+     */
+    fun deactivateAll() {
+        save(all().map { it.copy(active = false) })
+    }
+
     /** Add a peer and make it the active upstream, deactivating the previous one. */
     fun addAndActivate(peer: Peer) {
         val peers = all().toMutableList()

@@ -31,6 +31,16 @@ import kotlinx.coroutines.withContext
  */
 class PeersActivity : AppCompatActivity() {
 
+    companion object {
+        /**
+         * Set whenever the working mode changes. The backend restart is still in
+         * flight when the user returns to MainActivity, so the new port is not
+         * known yet — an explicit flag is more reliable than comparing URLs.
+         */
+        @Volatile
+        var modeChanged: Boolean = false
+    }
+
     private lateinit var binding: ActivityPeersBinding
 
     private val scanLauncher = registerForActivityResult(ScanContract()) { result ->
@@ -50,6 +60,10 @@ class PeersActivity : AppCompatActivity() {
         binding.scanButton.setOnClickListener { ensureCameraThenScan() }
 
         binding.pasteButton.setOnClickListener { showPasteDialog() }
+
+        binding.peerList.setOnItemClickListener { _, _, position, _ ->
+            showPeerMenu(peerAt(position))
+        }
 
         binding.peerList.setOnItemLongClickListener { _, _, position, _ ->
             showPeerMenu(peerAt(position))
@@ -131,6 +145,13 @@ class PeersActivity : AppCompatActivity() {
         binding.peerList.adapter = adapter
         binding.emptyView.visibility = if (peers.isEmpty()) android.view.View.VISIBLE else android.view.View.GONE
         binding.peerList.emptyView = binding.emptyView
+
+        val active = PeerStore.active()
+        binding.modeStatus.text = if (active == null) {
+            getString(R.string.peers_mode_local)
+        } else {
+            getString(R.string.peers_mode_following, active.name)
+        }
     }
 
     private fun label(peer: Peer): String {
@@ -154,23 +175,75 @@ class PeersActivity : AppCompatActivity() {
     }
 
     private fun showPeerMenu(peer: Peer) {
-        val options = if (peer.active) {
-            arrayOf(getString(R.string.peer_remove))
-        } else {
-            arrayOf(getString(R.string.peer_activate), getString(R.string.peer_remove))
+        if (peer.active) {
+            AlertDialog.Builder(this)
+                .setTitle(peer.name)
+                .setItems(
+                    arrayOf(
+                        getString(R.string.peer_deactivate),
+                        getString(R.string.peer_remove),
+                    )
+                ) { _, which ->
+                    when (which) {
+                        0 -> confirmWorkLocally()
+                        else -> {
+                            PeerStore.remove(peer.id)
+                            afterModeChange()
+                        }
+                    }
+                }
+                .show()
+            return
         }
+
         AlertDialog.Builder(this)
             .setTitle(peer.name)
-            .setItems(options) { _, which ->
-                if (options[which] == getString(R.string.peer_activate)) {
-                    PeerStore.setActive(peer.id)
-                } else {
-                    PeerStore.remove(peer.id)
+            .setItems(
+                arrayOf(
+                    getString(R.string.peer_activate),
+                    getString(R.string.peer_remove),
+                )
+            ) { _, which ->
+                when (which) {
+                    0 -> {
+                        PeerStore.setActive(peer.id)
+                        Toast.makeText(
+                            this,
+                            getString(R.string.mode_switched_following, peer.name),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                        afterModeChange()
+                    }
+                    else -> {
+                        PeerStore.remove(peer.id)
+                        afterModeChange()
+                    }
                 }
-                restartBackend()
-                render()
             }
             .show()
+    }
+
+    /**
+     * Unfollowing is reversible — the pairing token survives — so this only has
+     * to explain the change, not warn about losing anything.
+     */
+    private fun confirmWorkLocally() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.work_locally_title)
+            .setMessage(R.string.work_locally_body)
+            .setPositiveButton(R.string.work_locally) { _, _ ->
+                PeerStore.deactivateAll()
+                Toast.makeText(this, R.string.mode_switched_local, Toast.LENGTH_SHORT).show()
+                afterModeChange()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun afterModeChange() {
+        modeChanged = true
+        restartBackend()
+        render()
     }
 
     private fun pairWith(input: String) {
@@ -178,8 +251,7 @@ class PeersActivity : AppCompatActivity() {
             try {
                 val result = withContext(Dispatchers.IO) { PairingClient.pair(input) }
                 PeerStore.addAndActivate(result.peer)
-                restartBackend()
-                render()
+                afterModeChange()
                 Toast.makeText(
                     this@PeersActivity,
                     getString(R.string.peer_paired_ok, result.hostname),

@@ -43,10 +43,22 @@
     <string name="peers_paste_hint">http(s)://host:port/auth/connect/&lt;code&gt;</string>
     <string name="pair">Pair</string>
     <string name="peer_activate">Follow this server</string>
+    <string name="peer_deactivate">Stop following (work locally)</string>
     <string name="peer_remove">Remove</string>
     <string name="peer_paired_ok">Paired with %1$s. Mirroring its sessions.</string>
     <string name="peer_paired_fail">Pairing failed: %1$s</string>
     <string name="open_peers">Synced servers</string>
+
+    <!-- Working mode: local agent vs. following a paired upstream -->
+    <string name="mode_local">Local agent</string>
+    <string name="mode_following">Following: %1$s</string>
+    <string name="peers_mode_local">Working locally. Nothing is mirrored; the backend runs only this device\'s sessions.</string>
+    <string name="peers_mode_following">Following %1$s. Its sessions stream into this app live.</string>
+    <string name="work_locally_title">Work locally</string>
+    <string name="work_locally">Work locally</string>
+    <string name="work_locally_body">The local agent stops mirroring the home server and runs only this device. The pairing is kept, so you can resume following without pairing again.</string>
+    <string name="mode_switched_local">Switched to the local agent. Restarting the backend…</string>
+    <string name="mode_switched_following">Following %1$s. Restarting the backend…</string>
 
     <!-- Camera permission for the QR scanner -->
     <string name="camera_needed_title">Camera access</string>

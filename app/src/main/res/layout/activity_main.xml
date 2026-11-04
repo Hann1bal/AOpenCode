@@ -37,6 +37,24 @@
             android:textSize="14sp" />
     </LinearLayout>
 
+    <!-- Current working mode. Tapping it opens the same screen as the FAB, so the
+         state is always visible and one tap away from being changed. -->
+    <TextView
+        android:id="@+id/modeChip"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_margin="12dp"
+        android:background="@drawable/bg_mode_chip"
+        android:clickable="true"
+        android:focusable="true"
+        android:paddingHorizontal="14dp"
+        android:paddingVertical="8dp"
+        android:text="@string/mode_local"
+        android:textColor="#FFFFFFFF"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
     <!-- Live session sharing entry -->
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/peersButton"

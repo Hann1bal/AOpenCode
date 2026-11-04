@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.util.Base64
 import android.view.View
 import android.webkit.HttpAuthHandler
 import android.webkit.WebResourceError
@@ -16,6 +17,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import dev.opencode.mobile.databinding.ActivityMainBinding
+import dev.opencode.mobile.sync.PeerStore
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -25,6 +27,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private var readyJob: Job? = null
+    private var loadedUrl: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -41,6 +44,7 @@ class MainActivity : AppCompatActivity() {
         requestNotificationPermissionIfNeeded()
         setupWebView()
         setupRefreshAndError()
+        renderModeChip()
 
         // Bring the backend up (or wake it from idle)
         startService(Intent(this, BackendService::class.java).setAction(BackendService.ACTION_WAKE))
@@ -146,7 +150,7 @@ class MainActivity : AppCompatActivity() {
     private fun setupRefreshAndError() {
         binding.swipeRefresh.setOnRefreshListener {
             if (BackendManager.health()) {
-                binding.webView.reload()
+                loadBackend()
             } else {
                 wakeBackendAndLoad()
             }
@@ -158,6 +162,9 @@ class MainActivity : AppCompatActivity() {
         binding.peersButton.setOnClickListener {
             startActivity(Intent(this, PeersActivity::class.java))
         }
+        binding.modeChip.setOnClickListener {
+            startActivity(Intent(this, PeersActivity::class.java))
+        }
     }
 
     private fun wakeBackendAndLoad() {
@@ -165,6 +172,42 @@ class MainActivity : AppCompatActivity() {
         binding.errorOverlay.visibility = View.GONE
         startService(Intent(this, BackendService::class.java).setAction(BackendService.ACTION_WAKE))
         awaitBackendAndLoad()
+    }
+
+    /**
+     * The SPA gates itself: on boot it registers `location.origin` as its server
+     * and probes `GET /api/info`. With no credential attached that probe draws a
+     * 401, and the app renders its own "connect to server" screen instead of the
+     * UI. The WebView's Basic-auth handler cannot rescue this — the probe is a
+     * `fetch()` and the SPA decides from the response status itself.
+     *
+     * `?auth_token=` is the supported boot path: `entry.tsx` reads it, attaches
+     * the password to the connection, and every request carries the Basic header
+     * from then on. The SPA strips the param from the address bar afterwards, so
+     * each load has to come through here rather than a plain `reload()`.
+     */
+    private fun backendUrl(): String {
+        val credential = "opencode:" + Prefs.backendToken
+        val token = Base64.encodeToString(credential.toByteArray(), Base64.NO_WRAP)
+        // Percent-encoding is not optional: the SPA reads this with URLSearchParams,
+        // which decodes a raw '+' as a space and would corrupt the credential.
+        return "http://127.0.0.1:${BackendManager.port}/?auth_token=${Uri.encode(token)}"
+    }
+
+    private fun loadBackend() {
+        val url = backendUrl()
+        loadedUrl = url
+        binding.webView.loadUrl(url)
+    }
+
+    /** Makes the current working mode visible: local agent, or following a peer. */
+    private fun renderModeChip() {
+        val peer = PeerStore.active()
+        binding.modeChip.text = if (peer == null) {
+            getString(R.string.mode_local)
+        } else {
+            getString(R.string.mode_following, peer.name)
+        }
     }
 
     private fun awaitBackendAndLoad() {
@@ -181,10 +224,7 @@ class MainActivity : AppCompatActivity() {
             }
             if (!isActive) return@launch
             if (ready) {
-                val url = "http://127.0.0.1:${BackendManager.port}/"
-                if (binding.webView.url == null) {
-                    binding.webView.loadUrl(url)
-                }
+                if (loadedUrl == null) loadBackend()
                 binding.progressOverlay.visibility = View.GONE
                 binding.offlineBanner.visibility = View.GONE
             } else {
@@ -205,8 +245,14 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         if (::binding.isInitialized) {
             startService(Intent(this, BackendService::class.java).setAction(BackendService.ACTION_WAKE))
-            if (binding.webView.url == null && BackendManager.health()) {
-                binding.webView.loadUrl("http://127.0.0.1:${BackendManager.port}/")
+            renderModeChip()
+            // Switching mode restarts the backend, possibly on a new port, so the
+            // page we are holding is stale. The flag is explicit because the port
+            // is not yet known here — the restart may still be in flight.
+            if (PeersActivity.modeChanged) {
+                PeersActivity.modeChanged = false
+                loadedUrl = null
+                wakeBackendAndLoad()
             }
         }
     }

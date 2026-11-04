@@ -20,6 +20,18 @@
         android:text="@string/peers_subtitle"
         android:textSize="13sp" />
 
+    <!-- What the backend is doing right now, so switching is an informed choice. -->
+    <TextView
+        android:id="@+id/modeStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:background="@drawable/bg_mode_chip"
+        android:padding="12dp"
+        android:text="@string/mode_local"
+        android:textColor="#FFFFFFFF"
+        android:textSize="13sp" />
+
     <ListView
         android:id="@+id/peerList"
         android:layout_width="match_parent"
