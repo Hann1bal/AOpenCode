@@ -123,4 +123,26 @@
         android:textIsSelectable="true"
         android:textSize="11sp"
         android:alpha="0.55" />
+
+    <!-- The folder the backend runs in and treats as its project root. On Android
+         nothing a user would guess is writable, so the real path is shown here. -->
+    <TextView
+        android:id="@+id/workspaceInfo"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:gravity="center"
+        android:textIsSelectable="true"
+        android:textSize="11sp"
+        android:alpha="0.55" />
+
+    <!-- A 500 from a live server never reaches the failure overlay, so the log
+         has to be reachable from somewhere else. -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/copyDiagnosticsButton"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="@string/copy_diagnostics" />
 </LinearLayout>

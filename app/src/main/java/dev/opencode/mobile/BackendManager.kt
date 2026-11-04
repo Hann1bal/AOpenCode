@@ -50,6 +50,18 @@ object BackendManager {
 
     fun homeDir(ctx: Context): File = File(homeBase(ctx), "home").also { it.mkdirs() }
 
+    /**
+     * The directory the backend runs in, and the one the UI should register as a
+     * project.
+     *
+     * Without an explicit cwd the process inherits Android's default working
+     * directory of `/`. The server resolves that as a project root, and `/` is
+     * neither writable nor listable by an app — the failure surfaces as an opaque
+     * HTTP 500 ("UnexpectedStatus") when the user tries to create a project.
+     * A real, app-owned, writable directory removes that whole class of failure.
+     */
+    fun workspaceDir(ctx: Context): File = File(homeBase(ctx), "workspace").also { it.mkdirs() }
+
     private fun homeBase(ctx: Context): File = File(ctx.filesDir, "backend").also { it.mkdirs() }
 
     fun isExtracted(ctx: Context): Boolean {
@@ -125,6 +137,8 @@ object BackendManager {
         )
         pb.redirectErrorStream(true)
         pb.redirectOutput(logFile)
+        // Do not let the server inherit Android's cwd of `/`; see workspaceDir().
+        pb.directory(workspaceDir(ctx))
 
         val home = homeDir(ctx)
         val env = pb.environment()
@@ -248,6 +262,36 @@ object BackendManager {
                 "backend.log, last lines:\n$tail"
         )
         return parts.joinToString("\n\n")
+    }
+
+    /**
+     * The full state of the app and its backend as one copyable string. A 500
+     * from a live server never reaches the failure overlay, so this is how the
+     * log gets off the device without adb.
+     */
+    fun diagnosticsReport(ctx: Context): String = buildString {
+        appendLine("AOpenCode ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+        appendLine(
+            "device=${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} " +
+                "android=${android.os.Build.VERSION.RELEASE} (sdk ${android.os.Build.VERSION.SDK_INT})",
+        )
+        appendLine(
+            "targetSdk=${BuildConfig.TARGET_SDK} " +
+                "abi=${android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "?"}",
+        )
+        appendLine("engine=${webViewVersion()}")
+        appendLine(
+            if (batteryOptimized(ctx)) "battery=OPTIMIZED — the ROM may freeze the backend"
+            else "battery=exempt",
+        )
+        val backendState = if (isRunning()) "running on port $port" else "not running"
+        appendLine("backend=$backendState lastProbe=${lastProbe ?: "none"}")
+        val ws = workspaceDir(ctx)
+        appendLine("workspace=${ws.absolutePath} writable=${ws.canWrite()}")
+        appendLine("mode=${PeerStore.active()?.let { "following ${it.name}" } ?: "local agent"}")
+        appendLine()
+        appendLine("backend.log, last lines:")
+        appendLine(logTail(ctx, 150).ifBlank { "(empty — the process produced no output)" })
     }
 
     /** Quick liveness probe of the HTTP server. */

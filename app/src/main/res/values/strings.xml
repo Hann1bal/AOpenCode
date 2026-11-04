@@ -74,4 +74,7 @@
     <string name="battery_body">Huawei, Xiaomi and similar ROMs freeze background apps to save battery, which stops the local OpenCode server while it is supposed to be running. Allow unrestricted background activity for this app. On HarmonyOS/EMUI also open Battery → App launch and set OpenCode to “Manage manually”.</string>
     <string name="battery_open">Open battery settings</string>
     <string name="engine_info">UI engine: %1$s</string>
+    <string name="workspace_label">Project folder: %1$s</string>
+    <string name="copy_diagnostics">Copy diagnostics</string>
+    <string name="diagnostics_copied">Diagnostics copied — paste it wherever you are reporting the issue</string>
 </resources>

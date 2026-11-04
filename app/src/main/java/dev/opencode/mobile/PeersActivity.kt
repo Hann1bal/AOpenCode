@@ -1,6 +1,9 @@
 package dev.opencode.mobile
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -64,6 +67,8 @@ class PeersActivity : AppCompatActivity() {
         binding.workLocallyButton.setOnClickListener { confirmWorkLocally() }
 
         binding.batteryButton.setOnClickListener { requestBatteryExemption() }
+
+        binding.copyDiagnosticsButton.setOnClickListener { copyDiagnostics() }
 
         binding.peerList.setOnItemClickListener { _, _, position, _ ->
             showPeerMenu(peerAt(position))
@@ -161,6 +166,20 @@ class PeersActivity : AppCompatActivity() {
         binding.batteryWarning.visibility =
             if (BackendManager.batteryOptimized(this)) android.view.View.VISIBLE else android.view.View.GONE
         binding.engineInfo.text = getString(R.string.engine_info, BackendManager.webViewVersion())
+        binding.workspaceInfo.text =
+            getString(R.string.workspace_label, BackendManager.workspaceDir(this).absolutePath)
+    }
+
+    /**
+     * A 500 from a live server never reaches the failure overlay, so the log has
+     * to be reachable while everything still looks healthy.
+     */
+    private fun copyDiagnostics() {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText("AOpenCode diagnostics", BackendManager.diagnosticsReport(this)),
+        )
+        Toast.makeText(this, R.string.diagnostics_copied, Toast.LENGTH_LONG).show()
     }
 
     /**
