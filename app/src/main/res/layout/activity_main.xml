@@ -71,45 +71,67 @@
             android:textSize="15sp" />
     </LinearLayout>
 
-    <!-- Error overlay with retry -->
+    <!-- Error overlay: shows the real failure, not just "something went wrong".
+         The detail block carries the launch diagnostics and the tail of the
+         backend's own log, which is the only way to see why it died without adb. -->
     <LinearLayout
         android:id="@+id/errorOverlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="?android:attr/colorBackground"
-        android:gravity="center"
         android:orientation="vertical"
-        android:padding="32dp"
+        android:padding="24dp"
         android:visibility="gone">
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/error_title"
-            android:textSize="18sp"
+            android:textSize="20sp"
             android:textStyle="bold" />
 
         <TextView
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:gravity="center"
             android:text="@string/error_body"
-            android:textSize="14sp" />
+            android:textSize="14sp"
+            android:alpha="0.8" />
+
+        <ScrollView
+            android:id="@+id/errorDetailScroll"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginTop="18dp"
+            android:background="#1A000000"
+            android:padding="12dp"
+            android:scrollbars="vertical">
+
+            <TextView
+                android:id="@+id/errorDetail"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:textSize="11sp"
+                android:textColor="#FF9A9A"
+                android:textIsSelectable="true"
+                android:lineSpacingExtra="2dp" />
+        </ScrollView>
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/retryButton"
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="18dp"
             android:text="@string/retry" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/settingsButton"
             style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="6dp"
             android:text="@string/edit_settings" />
     </LinearLayout>
 </FrameLayout>

@@ -31,6 +31,14 @@ object BackendManager {
     var port: Int = -1
         private set
 
+    /**
+     * Last startup failure, kept so the UI can render the real reason instead of
+     * a generic "could not start". Cleared whenever a launch is attempted.
+     */
+    @Volatile
+    var lastError: String? = null
+        private set
+
     fun runtimeDir(ctx: Context): File = File(ctx.filesDir, "runtime").also { it.mkdirs() }
 
     fun homeDir(ctx: Context): File = File(homeBase(ctx), "home").also { it.mkdirs() }
@@ -86,12 +94,15 @@ object BackendManager {
     fun start(ctx: Context): Int {
         if (isRunning() && health()) return port
         stop()
+        lastError = null
 
         val dir = runtimeDir(ctx)
         val loader = File(dir, "ld-musl-aarch64.so.1")
         val bin = File(dir, "opencode")
         if (!loader.exists() || !bin.exists()) {
-            throw IllegalStateException("Backend not extracted")
+            val msg = "Backend not extracted: loader=${loader.exists()} bin=${bin.exists()} in ${dir.absolutePath}"
+            lastError = msg
+            throw IllegalStateException(msg)
         }
 
         val p = findFreePort()
@@ -138,7 +149,9 @@ object BackendManager {
         process = try {
             pb.start()
         } catch (e: Exception) {
-            throw IllegalStateException(describeLaunchFailure(loader, bin, dir, e), e)
+            val msg = describeLaunchFailure(loader, bin, dir, e)
+            lastError = msg
+            throw IllegalStateException(msg, e)
         }
         port = p
         Prefs.backendPort = p
@@ -162,6 +175,44 @@ object BackendManager {
             append(" targetSdk=").append(BuildConfig.TARGET_SDK)
             append(" abi=").append(android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "?")
         }
+    }
+
+    /** Last [maxLines] lines of the backend's captured stdout/stderr. */
+    fun logTail(ctx: Context, maxLines: Int = 60): String {
+        val f = File(ctx.cacheDir, "backend.log")
+        if (!f.exists()) return ""
+        return try {
+            val lines = f.readLines()
+            lines.drop(maxOf(0, lines.size - maxLines)).joinToString("\n")
+        } catch (e: Exception) {
+            "(could not read backend.log: ${e.message})"
+        }
+    }
+
+    /**
+     * Everything needed to diagnose a failed start as one string: the launch
+     * error if exec threw, whether the process is alive, and the backend's own
+     * output. A process that starts but never binds is a different failure from
+     * one that cannot exec at all, and this distinguishes them.
+     */
+    fun failureReport(ctx: Context): String {
+        val parts = mutableListOf<String>()
+        parts.add(lastError?.let { "Launch error:\n$it" } ?: "No launch exception was raised.")
+        parts.add(
+            if (isRunning()) {
+                "Process: alive, but HTTP never answered on port $port"
+            } else {
+                "Process: not running"
+            }
+        )
+        val tail = logTail(ctx)
+        parts.add(
+            if (tail.isBlank())
+                "(backend.log is empty — the process produced no output at all)"
+            else
+                "backend.log, last lines:\n$tail"
+        )
+        return parts.joinToString("\n\n")
     }
 
     /** Quick liveness probe of the HTTP server. */

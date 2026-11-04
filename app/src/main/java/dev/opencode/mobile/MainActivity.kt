@@ -189,6 +189,7 @@ class MainActivity : AppCompatActivity() {
                 binding.offlineBanner.visibility = View.GONE
             } else {
                 binding.progressOverlay.visibility = View.GONE
+                binding.errorDetail.text = BackendManager.failureReport(this@MainActivity)
                 binding.errorOverlay.visibility = View.VISIBLE
             }
         }
