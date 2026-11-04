@@ -1,4 +1,5 @@
 import java.util.Properties
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("com.android.application")
@@ -69,24 +70,26 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildFeatures {
         viewBinding = true
         buildConfig = true
     }
 
-    packaging {
-        // The bundled backend assets are already-compressed binaries; skip re-compressing
-        // to keep extraction fast and avoid corrupting ELF payloads.
-        assets {
-            noCompress += "opencode"
-            noCompress += "so"
-            noCompress += "so.1"
-            noCompress += "so.6"
-        }
+    // The bundled backend assets are already-compressed binaries; skip re-compressing
+    // to keep extraction fast and avoid corrupting ELF payloads. AGP 8.x exposes this
+    // through androidResources.noCompress (there is no `packaging.assets` block).
+    androidResources {
+        noCompress += "opencode"
+        noCompress += "so"
+        noCompress += "so.1"
+        noCompress += "so.6"
+    }
+}
+
+// Kotlin 2.x: compilerOptions replaces the deprecated kotlinOptions block.
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
     }
 }
 
