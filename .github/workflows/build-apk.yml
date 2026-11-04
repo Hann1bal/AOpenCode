@@ -10,7 +10,7 @@ on:
       fork_binary_url:
         description: "Direct URL to a fork-built linux-arm64-musl opencode binary (with UpstreamSync). Leave empty for stock npm build."
         required: false
-        default: ""
+        default: "https://github.com/Hann1bal/opencode-mesh/releases/download/fork-sync-dev/opencode"
   push:
     tags:
       - "v*"
