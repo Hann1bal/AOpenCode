@@ -30,7 +30,6 @@
     <string name="peers_paste_hint">http(s)://host:port/auth/connect/&lt;code&gt;</string>
     <string name="pair">Pair</string>
     <string name="peer_activate">Follow this server</string>
-    <string name="peer_make_active_again">Follow this server</string>
     <string name="peer_remove">Remove</string>
     <string name="peer_paired_ok">Paired with %1$s. Mirroring its sessions.</string>
     <string name="peer_paired_fail">Pairing failed: %1$s</string>

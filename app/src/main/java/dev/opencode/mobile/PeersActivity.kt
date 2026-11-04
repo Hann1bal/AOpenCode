@@ -8,7 +8,8 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import com.google.zxing.integration.android.IntentIntegrator
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import dev.opencode.mobile.databinding.ActivityPeersBinding
 import dev.opencode.mobile.sync.PairingClient
 import dev.opencode.mobile.sync.Peer
@@ -25,12 +26,8 @@ class PeersActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityPeersBinding
 
-    private val scanLauncher = registerForActivityResult(
-        com.google.zxing.integration.android.IntentIntegrator.ScanContract()
-    ) { result ->
-        if (result.contents != null) {
-            pairWith(result.contents)
-        }
+    private val scanLauncher = registerForActivityResult(ScanContract()) { result ->
+        result.contents?.let { pairWith(it) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,11 +36,13 @@ class PeersActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         binding.scanButton.setOnClickListener {
-            IntentIntegrator(this).apply {
-                setDesiredBarcodeFormats(IntentIntegrator.QR_CODE)
-                setBeepEnabled(false)
-                setOrientationLocked(true)
-            }.initiateScan()
+            scanLauncher.launch(
+                ScanOptions().apply {
+                    setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                    setBeepEnabled(false)
+                    setOrientationLocked(true)
+                }
+            )
         }
 
         binding.pasteButton.setOnClickListener { showPasteDialog() }
@@ -90,25 +89,20 @@ class PeersActivity : AppCompatActivity() {
 
     private fun showPeerMenu(peer: Peer) {
         val options = if (peer.active) {
-            arrayOf(getString(R.string.peer_make_active_again), getString(R.string.peer_remove))
+            arrayOf(getString(R.string.peer_remove))
         } else {
             arrayOf(getString(R.string.peer_activate), getString(R.string.peer_remove))
         }
         AlertDialog.Builder(this)
             .setTitle(peer.name)
             .setItems(options) { _, which ->
-                when (options[which]) {
-                    getString(R.string.peer_activate) -> {
-                        PeerStore.setActive(peer.id)
-                        restartBackend()
-                        render()
-                    }
-                    getString(R.string.peer_remove) -> {
-                        PeerStore.remove(peer.id)
-                        restartBackend()
-                        render()
-                    }
+                if (options[which] == getString(R.string.peer_activate)) {
+                    PeerStore.setActive(peer.id)
+                } else {
+                    PeerStore.remove(peer.id)
                 }
+                restartBackend()
+                render()
             }
             .show()
     }
