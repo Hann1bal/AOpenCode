@@ -1,32 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Security posture:
-  - The local opencode backend runs on 127.0.0.1 over cleartext HTTP. That never
-    leaves the device, so cleartext there is acceptable.
-  - The inference endpoint is expected to be HTTPS. Cleartext is additionally
-    permitted for private/CGNAT ranges (Tailscale 100.64/10, RFC1918) so that a
-    self-hosted endpoint on a tailnet works out of the box. If your endpoint is
-    public, use HTTPS and remove those subnet blocks.
+  Cleartext is permitted globally, and that is deliberate.
+
+  Every host this app contacts is supplied by the user at runtime:
+    - the bundled backend on 127.0.0.1
+    - a self-hosted inference endpoint (Base URL on the setup screen)
+    - a paired upstream over LAN / Tailscale (the pairing link host)
+
+  Android's domain-config matches literal hostnames only. It has no CIDR or
+  subnet support, so the previous per-range blocks (which used a `subnet`
+  attribute that does not exist and was silently ignored) never matched
+  anything, and plain HTTP to e.g. 100.87.88.47 failed with
+  "Cleartext HTTP traffic not permitted". Enumerating exact IPs is not
+  viable when the server changes per user.
+
+  This does not weaken the app's actual threat model: there is no third-party
+  traffic, HTTPS is still used whenever the endpoint provides it, and the
+  system trust store remains the only anchor.
 -->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false">
+    <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>
     </base-config>
-
-    <!-- Local backend: loopback only -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">127.0.0.1</domain>
-        <domain includeSubdomains="false">localhost</domain>
-    </domain-config>
-
-    <!-- Self-hosted inference over a private network / tailnet (cleartext allowed).
-         Remove this block if you enforce HTTPS end-to-end. -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true" subnet="10.0.0.0">10</domain>
-        <domain includeSubdomains="true" subnet="100.64.0.0">100.64</domain>
-        <domain includeSubdomains="true" subnet="172.16.0.0">172.16</domain>
-        <domain includeSubdomains="true" subnet="192.168.0.0">192.168</domain>
-    </domain-config>
 </network-security-config>
