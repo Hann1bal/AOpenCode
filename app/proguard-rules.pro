@@ -8,3 +8,8 @@
 
 # Coroutines
 -dontwarn kotlinx.coroutines.**
+
+# QR pairing scanner: zxing readers are resolved reflectively
+-keep class com.journeyapps.barcodescanner.** { *; }
+-keep class com.google.zxing.** { *; }
+-dontwarn com.google.zxing.**

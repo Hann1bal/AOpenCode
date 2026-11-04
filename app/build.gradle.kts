@@ -50,9 +50,13 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Without a CI keystore the release APK would come out unsigned and
+            // refuse to install, so fall back to the debug signing config.
             val ksPath = System.getenv("KEYSTORE_PATH")
-            if (ksPath != null && file(ksPath).exists()) {
-                signingConfig = signingConfigs.getByName("release")
+            signingConfig = if (ksPath != null && file(ksPath).exists()) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
             }
         }
         debug {
