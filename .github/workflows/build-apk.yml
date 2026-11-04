@@ -84,6 +84,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           [ -f /tmp/gradle.log ] || exit 0
+          # R8 writes the exact keep/dontwarn rules it wanted into missing_rules.txt,
+          # but that file dies with the runner. Fold it into the published log.
+          MISSING=app/build/outputs/mapping/release/missing_rules.txt
+          if [ -f "$MISSING" ]; then
+            {
+              echo ""
+              echo "===== missing_rules.txt ====="
+              cat "$MISSING"
+            } >> /tmp/gradle.log
+          fi
           gh release create apk-diag \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
