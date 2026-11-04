@@ -1,12 +1,19 @@
 package dev.opencode.mobile
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
@@ -30,20 +37,17 @@ class PeersActivity : AppCompatActivity() {
         result.contents?.let { pairWith(it) }
     }
 
+    private val cameraPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) launchScanner() else showCameraUnavailable()
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityPeersBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        binding.scanButton.setOnClickListener {
-            scanLauncher.launch(
-                ScanOptions().apply {
-                    setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                    setBeepEnabled(false)
-                    setOrientationLocked(true)
-                }
-            )
-        }
+        binding.scanButton.setOnClickListener { ensureCameraThenScan() }
 
         binding.pasteButton.setOnClickListener { showPasteDialog() }
 
@@ -53,6 +57,68 @@ class PeersActivity : AppCompatActivity() {
         }
 
         render()
+    }
+
+    /**
+     * CAMERA is a dangerous permission: declaring it in the manifest is not enough.
+     * Until it is actually requested, the app does not even appear under
+     * Settings → Apps → Permissions → Camera on many ROMs, which is why the
+     * scanner looked unusable.
+     */
+    private fun ensureCameraThenScan() {
+        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
+            PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            launchScanner()
+            return
+        }
+
+        if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.CAMERA)) {
+            AlertDialog.Builder(this)
+                .setTitle(R.string.camera_needed_title)
+                .setMessage(R.string.camera_needed_body)
+                .setPositiveButton(R.string.allow) { _, _ ->
+                    cameraPermission.launch(Manifest.permission.CAMERA)
+                }
+                .setNegativeButton(R.string.use_paste_link) { _, _ -> showPasteDialog() }
+                .show()
+            return
+        }
+
+        // First ask — or already locked out by the user. The request surfaces the
+        // system dialog; a permanent denial lands in showCameraUnavailable().
+        cameraPermission.launch(Manifest.permission.CAMERA)
+    }
+
+    private fun launchScanner() {
+        scanLauncher.launch(
+            ScanOptions().apply {
+                setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                setBeepEnabled(false)
+                setOrientationLocked(true)
+            }
+        )
+    }
+
+    /**
+     * Camera is not available. Rather than dead-ending, hand the user straight to
+     * the app's settings page and keep the paste path one tap away — pairing never
+     * actually requires the camera.
+     */
+    private fun showCameraUnavailable() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.camera_unavailable_title)
+            .setMessage(R.string.camera_unavailable_body)
+            .setPositiveButton(R.string.open_settings) { _, _ ->
+                startActivity(
+                    Intent(
+                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.fromParts("package", packageName, null),
+                    )
+                )
+            }
+            .setNegativeButton(R.string.use_paste_link) { _, _ -> showPasteDialog() }
+            .show()
     }
 
     private fun peerAt(position: Int): Peer = allPeers()[position]

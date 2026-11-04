@@ -47,4 +47,13 @@
     <string name="peer_paired_ok">Paired with %1$s. Mirroring its sessions.</string>
     <string name="peer_paired_fail">Pairing failed: %1$s</string>
     <string name="open_peers">Synced servers</string>
+
+    <!-- Camera permission for the QR scanner -->
+    <string name="camera_needed_title">Camera access</string>
+    <string name="camera_needed_body">Used only to scan the QR code that `opencode pair` prints. Nothing is recorded or stored.</string>
+    <string name="allow">Allow</string>
+    <string name="use_paste_link">Paste link instead</string>
+    <string name="camera_unavailable_title">Camera not available</string>
+    <string name="camera_unavailable_body">Camera permission is turned off for this app, so the scanner cannot open. You can enable it in system settings, or just paste the pairing link — the camera is optional.</string>
+    <string name="open_settings">Open settings</string>
 </resources>
