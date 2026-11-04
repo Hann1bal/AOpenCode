@@ -54,7 +54,22 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           UPDATE_REPO: ${{ github.repository }}
-        run: gradle --no-daemon assembleRelease
+        # GitHub hides raw logs behind a login on public repos, so mirror the
+        # failure into the job summary, which is readable anonymously.
+        run: |
+          set +e
+          gradle --no-daemon assembleRelease 2>&1 | tee /tmp/gradle.log
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            {
+              echo "### assembleRelease failed (exit $code)"
+              echo ""
+              echo '```'
+              grep -Ei '^(e: |w: |error: |FAILURE|> Task .*FAILED|What went wrong|\* What|\* Where|Caused by|Execution failed)' /tmp/gradle.log | tail -n 100
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$code"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
