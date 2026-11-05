@@ -75,10 +75,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupWebView() {
-        // A service worker registered by an earlier run keeps serving the
-        // unpatched document from its own cache, out of reach of the shim.
-        WebViewShim.killServiceWorkers()
-
         binding.webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true

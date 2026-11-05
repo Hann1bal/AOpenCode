@@ -1,9 +1,11 @@
 package dev.opencode.mobile
 
+import android.content.Context
 import android.net.Uri
 import android.util.Base64
 import android.webkit.WebResourceResponse
 import java.io.ByteArrayInputStream
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -39,6 +41,9 @@ object WebViewShim {
      */
     private val BLOCKED_PATHS = setOf("/sw.js", "/registerSW.js")
 
+    /** Chromium keeps worker registrations under "Service Worker"; older builds vary. */
+    private val SW_DIRS = listOf("Service Worker", "ServiceWorker")
+
     /** Set by the shim itself; lets the UI prove the injection actually landed. */
     @Volatile
     var installedState: String = "not verified"
@@ -55,15 +60,25 @@ object WebViewShim {
     }
 
     /**
-     * Drops any service worker left over from an earlier run. Without this, a
-     * worker registered before the shim existed keeps serving the unpatched
-     * document from its precache forever.
+     * Removes service worker registrations and their caches from disk, once per
+     * version.
+     *
+     * The bundled web UI registers a Workbox worker with
+     * `navigateFallback: "/index.html"`, so once it activates it answers
+     * navigations out of its own precache and the WebView never asks us for the
+     * document — the only place the shim can be installed. WebView exposes no API
+     * to unregister a worker, so its storage is removed directly. Only the
+     * worker's own directory goes: localStorage, cookies and the HTTP cache stay.
+     *
+     * Must run before any WebView instance exists.
      */
-    fun killServiceWorkers() {
-        try {
-            android.webkit.ServiceWorkerController.getInstance().clearAllServiceWorkerData()
-        } catch (_: Exception) {
-            // No worker data, or the controller is unavailable; nothing to do.
+    fun purgeServiceWorkers(ctx: Context) {
+        if (Prefs.swPurgeStamp == BuildConfig.VERSION_CODE) return
+        Prefs.swPurgeStamp = BuildConfig.VERSION_CODE
+        val dataDir = ctx.filesDir.parentFile ?: return
+        for (name in SW_DIRS) {
+            val dir = File(dataDir, "app_webview/$name")
+            if (dir.exists()) dir.deleteRecursively()
         }
     }
 
@@ -155,10 +170,20 @@ object WebViewShim {
 
     private val HEAD = Regex("(?i)<head[^>]*>")
 
+    /**
+     * Belt and braces: if a worker survived the on-disk purge, drop it as soon as
+     * the document runs, so the next load comes back through us.
+     */
+    private const val UNREGISTER_TAG =
+        "<script>if(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations){" +
+            "navigator.serviceWorker.getRegistrations().then(function(rs){" +
+            "rs.forEach(function(r){r.unregister();});});}</script>"
+
     private fun injectShim(html: String): String? {
         val match = HEAD.find(html) ?: return null
         val end = match.range.last + 1
-        return html.substring(0, end) + "<script src=\"$SHIM_PATH\"></script>" + html.substring(end)
+        val tag = "<script src=\"$SHIM_PATH\"></script>"
+        return html.substring(0, end) + tag + UNREGISTER_TAG + html.substring(end)
     }
 
     /**

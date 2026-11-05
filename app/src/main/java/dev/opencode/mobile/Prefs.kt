@@ -24,6 +24,7 @@ object Prefs {
     private const val KEY_LAST_UPDATE_CHECK = "last_update_check"
     private const val KEY_PEERS_JSON = "peers_json"
     private const val KEY_RIPGREP_STATUS = "ripgrep_status"
+    private const val KEY_SW_PURGE_STAMP = "sw_purge_stamp"
 
     fun init(context: Context) {
         if (::prefs.isInitialized) return
@@ -97,4 +98,9 @@ object Prefs {
     var ripgrepStatus: String
         get() = prefs.getString(KEY_RIPGREP_STATUS, "not checked") ?: "not checked"
         set(v) = prefs.edit().putString(KEY_RIPGREP_STATUS, v).apply()
+
+    /** Version code for which the service worker storage was last purged. */
+    var swPurgeStamp: Int
+        get() = prefs.getInt(KEY_SW_PURGE_STAMP, 0)
+        set(v) = prefs.edit().putInt(KEY_SW_PURGE_STAMP, v).apply()
 }

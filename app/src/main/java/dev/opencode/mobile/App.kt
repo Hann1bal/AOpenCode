@@ -8,6 +8,9 @@ class App : Application() {
     override fun onCreate() {
         super.onCreate()
         Prefs.init(this)
+        // Before any WebView exists: a service worker left from an earlier version
+        // would otherwise keep serving the unpatched document from its precache.
+        WebViewShim.purgeServiceWorkers(this)
         createNotificationChannels()
     }
 
