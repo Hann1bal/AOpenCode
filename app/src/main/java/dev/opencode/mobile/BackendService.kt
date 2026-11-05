@@ -89,6 +89,12 @@ class BackendService : Service() {
                         }
                     }
                 }
+                // Checked on its own because a rootfs that failed halfway must be
+                // retried without dragging the whole backend through a re-extract.
+                if (!RootfsExtractor.isReady(this@BackendService)) {
+                    withContext(Dispatchers.Main) { updateNotification("Installing environment…") }
+                    RootfsExtractor.extract(this@BackendService)
+                }
                 if (!BackendManager.isRunning() || !BackendManager.health()) {
                     withContext(Dispatchers.Main) { updateNotification("Starting OpenCode…") }
                     BackendManager.start(this@BackendService)

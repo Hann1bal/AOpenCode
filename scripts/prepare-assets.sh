@@ -8,6 +8,7 @@
 #   3. libstdc++ from Alpine Linux (aarch64)
 #   4. ripgrep from Alpine Linux community (aarch64, musl)
 #   5. pcre2 from Alpine Linux main (ripgrep's own shared-library dependency)
+#   6. a full Alpine userland (git, bash, python3, curl, ssh, jq, coreutils)
 #
 # Pinned versions + checksums are recorded in assets.lock for reproducibility.
 # Run this before `gradle assembleRelease` (CI does it automatically).
@@ -46,7 +47,7 @@ index_find() {
 }
 
 # --- 1. opencode musl binary -------------------------------------------------
-echo "==> [1/6] opencode linux-arm64-musl"
+echo "==> [1/7] opencode linux-arm64-musl"
 if [ -n "${OPENCODE_BINARY_URL:-}" ]; then
     # Fork build: fetch the linux-arm64-musl binary produced by the opencode
     # fork's fork-build workflow (includes the UpstreamSync module).
@@ -61,7 +62,7 @@ fi
 chmod 755 "$OUT_DIR/opencode"
 
 # --- 2. Alpine package index -------------------------------------------------
-echo "==> [2/6] Alpine package index (main)"
+echo "==> [2/7] Alpine package index (main)"
 index_fetch main main
 
 MUSL_APK="$(index_find main musl)"
@@ -78,7 +79,7 @@ fi
 echo "    musl=$MUSL_APK  libstdc++=$STDCPP_APK"
 
 # --- 3. musl loader + libc ---------------------------------------------------
-echo "==> [3/6] musl loader + libc"
+echo "==> [3/7] musl loader + libc"
 curl -fsSL "${ALPINE_MIRROR}/${ALPINE_VERSION}/main/aarch64/${MUSL_APK}" -o "$TMP/musl.apk"
 mkdir -p "$TMP/musl"
 tar xzf "$TMP/musl.apk" -C "$TMP/musl"
@@ -87,7 +88,7 @@ cp "$TMP/musl/lib/libc.musl-aarch64.so.1" "$OUT_DIR/libc.musl-aarch64.so.1"
 chmod 755 "$OUT_DIR/ld-musl-aarch64.so.1" "$OUT_DIR/libc.musl-aarch64.so.1"
 
 # --- 4. libstdc++ + libgcc ---------------------------------------------------
-echo "==> [4/6] libstdc++ + libgcc"
+echo "==> [4/7] libstdc++ + libgcc"
 curl -fsSL "${ALPINE_MIRROR}/${ALPINE_VERSION}/main/aarch64/${STDCPP_APK}" -o "$TMP/stdcpp.apk"
 mkdir -p "$TMP/stdcpp"
 tar xzf "$TMP/stdcpp.apk" -C "$TMP/stdcpp"
@@ -121,7 +122,7 @@ chmod 644 "$OUT_DIR/libgcc_s.so.1"
 # aarch64 musl build — only aarch64 *glibc*, which cannot run in our musl
 # runtime — and its auto-download path is unreachable anyway until DNS works. So
 # take Alpine's community package: built against the same musl we already ship.
-echo "==> [5/6] ripgrep (Alpine community, musl)"
+echo "==> [5/7] ripgrep (Alpine community, musl)"
 index_fetch community community
 RG_APK="$(index_find community ripgrep)"
 if [ -z "$RG_APK" ]; then
@@ -155,7 +156,7 @@ chmod 755 "$OUT_DIR/rg"
 # package and not part of musl. Without it the loader fails before rg runs:
 #   Error loading shared library libpcre2-8.so.0: No such file or directory
 # The main-repo package needs only musl itself, which we already ship.
-echo "==> [6/6] pcre2 (ripgrep dependency, Alpine main)"
+echo "==> [6/7] pcre2 (ripgrep dependency, Alpine main)"
 PCRE2_APK="$(index_find main pcre2)"
 if [ -z "$PCRE2_APK" ]; then
     echo "ERROR: could not find pcre2 in Alpine main index" >&2
@@ -175,6 +176,19 @@ fi
 cp "$PCRE2_REAL" "$OUT_DIR/libpcre2-8.so.0"
 chmod 644 "$OUT_DIR/libpcre2-8.so.0"
 
+# --- 7. Alpine userland ----------------------------------------------------
+# Without this the agent on the device has no git, no bash and no python, and
+# every project it touches is non-VCS. build-rootfs.py resolves the seed list
+# against the Alpine indexes, merges the packages into one tree and stores it as
+# a zip with a sidecar symlink manifest; RootfsExtractor turns that into a
+# working environment at install time.
+echo "==> [7/7] Alpine userland (git, bash, python3, curl, ssh, jq, coreutils)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+python3 "${SCRIPT_DIR}/build-rootfs.py" \
+    --out "${OUT_DIR}/env.zip" \
+    --alpine "${ALPINE_VERSION}" \
+    --mirror "${ALPINE_MIRROR}"
+
 # --- lock file ---------------------------------------------------------------
 echo "==> Writing assets.lock"
 {
@@ -192,6 +206,7 @@ echo "==> Writing assets.lock"
     echo "sha256:libgcc_s=$(sha256sum "$OUT_DIR/libgcc_s.so.1" | cut -d' ' -f1)"
     echo "sha256:rg.musl=$(sha256sum "$OUT_DIR/rg.musl" | cut -d' ' -f1)"
     echo "sha256:libpcre2-8=$(sha256sum "$OUT_DIR/libpcre2-8.so.0" | cut -d' ' -f1)"
+    echo "sha256:env.zip=$(sha256sum "$OUT_DIR/env.zip" | cut -d' ' -f1)"
 } > "$OUT_DIR/assets.lock"
 
 echo "==> Done. Assets:"

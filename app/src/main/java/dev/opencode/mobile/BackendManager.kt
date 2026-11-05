@@ -49,6 +49,9 @@ object BackendManager {
 
     fun runtimeDir(ctx: Context): File = File(ctx.filesDir, "runtime").also { it.mkdirs() }
 
+    /** Where the Alpine userland lives: `root/` is the tree, `bin/` is on PATH. */
+    fun envDir(ctx: Context): File = File(homeBase(ctx), "env").also { it.mkdirs() }
+
     fun homeDir(ctx: Context): File = File(homeBase(ctx), "home").also { it.mkdirs() }
 
     /**
@@ -65,11 +68,18 @@ object BackendManager {
 
     private fun homeBase(ctx: Context): File = File(ctx.filesDir, "backend").also { it.mkdirs() }
 
+    /**
+     * Whether the bundled runtime on disk belongs to *this* version.
+     *
+     * Keyed on versionName because versionCode never moves: with the code as the
+     * stamp, an update installed new assets into the APK and then reused the old
+     * extracted binaries forever.
+     */
     fun isExtracted(ctx: Context): Boolean {
         val dir = runtimeDir(ctx)
         val stamp = File(dir, ".stamp")
         return stamp.exists() &&
-            stamp.readText() == BuildConfig.VERSION_CODE.toString() &&
+            stamp.readText() == BuildConfig.VERSION_NAME &&
             File(dir, "opencode").exists() &&
             File(dir, "ld-musl-aarch64.so.1").exists()
     }
@@ -91,9 +101,14 @@ object BackendManager {
             File(dir, name).setExecutable(true, true)
             onProgress((i + 1f) / total)
         }
-        File(dir, ".stamp").writeText(BuildConfig.VERSION_CODE.toString())
-        Prefs.extractStamp = BuildConfig.VERSION_CODE
+        File(dir, ".stamp").writeText(BuildConfig.VERSION_NAME)
+        Prefs.extractStamp = BuildConfig.VERSION_NAME
         verifyRipgrep(ctx)
+        // The userland is the slow part (~30 MB, 1.5k files, then wrappers and
+        // shebangs). It runs here, on the service's IO dispatcher, and its
+        // failures are recorded rather than thrown: a missing rootfs costs tools,
+        // not the app.
+        RootfsExtractor.extract(ctx)
     }
 
     /**
@@ -178,7 +193,31 @@ object BackendManager {
         env["XDG_DATA_HOME"] = File(File(home, ".local"), "share").absolutePath
         env["XDG_CACHE_HOME"] = File(home, ".cache").absolutePath
         env["TMPDIR"] = ctx.cacheDir.absolutePath
-        env["PATH"] = dir.absolutePath + ":/system/bin:/bin"
+        // The wrapper directory goes first so the bundled tools win over
+        // Android's toybox: consistent GNU behaviour is what scripts assume.
+        val root = RootfsExtractor.rootDir(ctx)
+        val envBin = RootfsExtractor.binDir(ctx)
+        env["PATH"] = listOf(envBin.absolutePath, dir.absolutePath, "/system/bin", "/bin")
+            .filter { File(it).isDirectory }
+            .joinToString(":")
+        // musl ships no trust store and /etc/ssl does not exist here, so every
+        // TLS client in the tree has to be pointed at the bundled bundle by hand.
+        val caBundle = File(root, "etc/ssl/certs/ca-certificates.crt")
+        if (caBundle.isFile) {
+            env["SSL_CERT_FILE"] = caBundle.absolutePath
+            env["SSL_CERT_DIR"] = caBundle.parentFile.absolutePath
+            env["CURL_CA_BUNDLE"] = caBundle.absolutePath
+            env["GIT_SSL_CAINFO"] = caBundle.absolutePath
+        }
+        // Perl resolves its modules from a compiled-in /usr prefix that is not
+        // where we unpacked it.
+        existing(
+            File(root, "usr/share/perl5/core_perl"),
+            File(root, "usr/share/perl5/vendor_perl"),
+            File(root, "usr/share/perl5/site_perl"),
+        )?.let { env["PERL5LIB"] = it }
+        // ssh refuses to run without a readable, writable ~/.ssh.
+        File(home, ".ssh").mkdirs()
         // Passed for defense-in-depth; current opencode does not enforce it, but
         // future versions may. The real protection is loopback-only + random port.
         env["OPENCODE_SERVER_USERNAME"] = "opencode"
@@ -255,6 +294,10 @@ object BackendManager {
             append(" abi=").append(android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "?")
         }
     }
+
+    /** The directories among [dirs] that exist, joined as a `:`-separated list. */
+    private fun existing(vararg dirs: File): String? =
+        dirs.filter { it.isDirectory }.takeIf { it.isNotEmpty() }?.joinToString(":") { it.absolutePath }
 
     /** Last [maxLines] lines of the backend's captured stdout/stderr. */
     fun logTail(ctx: Context, maxLines: Int = 60): String {
@@ -358,6 +401,8 @@ object BackendManager {
                 "proxy=NOT RUNNING (${HttpConnectProxy.lastError ?: "not started"}) — outbound fetch will fail",
         )
         appendLine("ripgrep=${Prefs.ripgrepStatus}")
+        appendLine("rootfs=${Prefs.rootfsStatus}")
+        appendLine("tools=${Prefs.rootfsChecks}")
         // "true/function" means the JS shim reached the document and URL.canParse exists.
         appendLine("shim=${WebViewShim.installedState}")
         appendLine()

@@ -20,11 +20,14 @@ object Prefs {
     private const val KEY_PROVIDER_NAME = "provider_name"
     private const val KEY_BACKEND_TOKEN = "backend_token"
     private const val KEY_BACKEND_PORT = "backend_port"
-    private const val KEY_EXTRACT_STAMP = "extract_stamp"
+    private const val KEY_EXTRACT_STAMP_V2 = "extract_stamp_v2"
     private const val KEY_LAST_UPDATE_CHECK = "last_update_check"
     private const val KEY_PEERS_JSON = "peers_json"
     private const val KEY_RIPGREP_STATUS = "ripgrep_status"
     private const val KEY_SW_PURGE_STAMP = "sw_purge_stamp_v2"
+    private const val KEY_ROOTFS_STAMP = "rootfs_stamp"
+    private const val KEY_ROOTFS_STATUS = "rootfs_status"
+    private const val KEY_ROOTFS_CHECKS = "rootfs_checks"
 
     fun init(context: Context) {
         if (::prefs.isInitialized) return
@@ -77,9 +80,30 @@ object Prefs {
         get() = prefs.getInt(KEY_BACKEND_PORT, -1)
         set(v) = prefs.edit().putInt(KEY_BACKEND_PORT, v).apply()
 
-    var extractStamp: Int
-        get() = prefs.getInt(KEY_EXTRACT_STAMP, 0)
-        set(v) = prefs.edit().putInt(KEY_EXTRACT_STAMP, v).apply()
+    /**
+     * Version name the bundled runtime was last unpacked for. Keyed on the name,
+     * not the code: versionCode is pinned at 1, so an int stamp made every
+     * install after the first look already-extracted and the backend binary was
+     * never refreshed by an update.
+     */
+    var extractStamp: String
+        get() = prefs.getString(KEY_EXTRACT_STAMP_V2, "") ?: ""
+        set(v) = prefs.edit().putString(KEY_EXTRACT_STAMP_V2, v).apply()
+
+    /** Version name the Alpine userland was last unpacked for. */
+    var rootfsStamp: String
+        get() = prefs.getString(KEY_ROOTFS_STAMP, "") ?: ""
+        set(v) = prefs.edit().putString(KEY_ROOTFS_STAMP, v).apply()
+
+    /** Counts from unpacking the userland: files, links, wrappers, shebangs. */
+    var rootfsStatus: String
+        get() = prefs.getString(KEY_ROOTFS_STATUS, "not extracted") ?: "not extracted"
+        set(v) = prefs.edit().putString(KEY_ROOTFS_STATUS, v).apply()
+
+    /** Per-tool results of the post-unpack smoke test. */
+    var rootfsChecks: String
+        get() = prefs.getString(KEY_ROOTFS_CHECKS, "not run") ?: "not run"
+        set(v) = prefs.edit().putString(KEY_ROOTFS_CHECKS, v).apply()
 
     var lastUpdateCheck: Long
         get() = prefs.getLong(KEY_LAST_UPDATE_CHECK, 0L)
