@@ -411,7 +411,16 @@ def main() -> int:
                 continue
             if posixpath.basename(link_rel) == posixpath.basename(target_rel):
                 continue
-            target = rootfs / real_target(target_rel)
+            target_rel_final = real_target(target_rel)
+            # Only copy when the target also lives in a bin dir. Copying a link
+            # that points outside one breaks every relative path inside the
+            # target: npm's shim is require("../lib/cli.js"), and once it sits
+            # in /usr/bin that resolves against /usr/bin instead of the module
+            # directory, so the command dies at startup with "Cannot find module".
+            # Such links have to stay links.
+            if not target_rel_final.startswith(BIN_DIRS):
+                continue
+            target = rootfs / target_rel_final
             if not target.is_file():
                 continue
             dst = rootfs / link_rel
