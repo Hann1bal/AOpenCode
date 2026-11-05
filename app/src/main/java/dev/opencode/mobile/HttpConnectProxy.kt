@@ -3,6 +3,7 @@ package dev.opencode.mobile
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 
@@ -34,6 +35,27 @@ object HttpConnectProxy {
         private set
 
     private var server: ServerSocket? = null
+
+    /**
+     * A bounded record of how each tunnel ended.
+     *
+     * "ECONNRESET" on screen says the connection closed; it does not say to
+     * which host, after how many bytes, or whether the reset came from us, the
+     * remote end or a middlebox. Recording the outcome per tunnel turns that
+     * into something diagnosable from a copied report.
+     */
+    private const val MAX_CONN_LOG = 24
+    private val connLog = ArrayDeque<String>()
+
+    @Synchronized
+    private fun logConn(entry: String) {
+        if (connLog.size >= MAX_CONN_LOG) connLog.removeFirst()
+        connLog.addLast(entry)
+    }
+
+    @Synchronized
+    fun connDump(): String =
+        if (connLog.isEmpty()) "none" else connLog.joinToString(" | ") + " (threads=${Thread.activeCount()})"
 
     @Synchronized
     fun start() {
@@ -88,16 +110,24 @@ object HttpConnectProxy {
                     val endpoint = splitHostPort(target, 443)
                     if (endpoint == null) {
                         reject(client, 400, "Bad Request")
+                        logConn("CONNECT $target -> 400 unparseable")
                         return
                     }
+                    val started = System.currentTimeMillis()
                     val upstream = connect(endpoint.first, endpoint.second)
                     if (upstream == null) {
                         reject(client, 502, "Bad Gateway")
+                        logConn("CONNECT $target -> unreachable in ${System.currentTimeMillis() - started}ms")
                         return
                     }
                     client.getOutputStream()
                         .write("HTTP/1.1 200 Connection Established\r\n\r\n".toByteArray(Charsets.US_ASCII))
-                    pump(client, upstream)
+                    client.getOutputStream().flush()
+                    val outcome = pump(client, upstream)
+                    logConn(
+                        "CONNECT ${endpoint.first}:${endpoint.second} $outcome " +
+                            "in ${System.currentTimeMillis() - started}ms",
+                    )
                     return
                 }
 
@@ -134,30 +164,67 @@ object HttpConnectProxy {
         for ((name, value) in headers) writeAscii(out, "$name: $value")
         out.write(CRLF)
         out.flush()
-        pump(client, upstream)
+        logConn("PROXY $method $path -> ${endpoint.first}:${endpoint.second} ${pump(client, upstream)}")
     }
 
     private fun connect(host: String, port: Int): Socket? = try {
         // Android's resolver runs here, not musl's — that is the whole point.
-        Socket(host, port)
+        // Explicit connect with a timeout: the Socket(host, port) constructor has
+        // none, so a black-holed host holds the thread open indefinitely.
+        val socket = Socket()
+        socket.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MS)
+        socket
     } catch (e: Exception) {
-        lastError = "$host:$port unreachable: ${e.javaClass.simpleName}"
+        lastError = "$host:$port unreachable: ${e.javaClass.simpleName}: ${e.message}"
         null
     }
 
-    private fun pump(client: Socket, upstream: Socket) {
+    /**
+     * Copies both directions until the tunnel ends, and reports how.
+     *
+     * Teardown matters as much as the copy. Closing a socket while its receive
+     * buffer still holds unread bytes makes the kernel send RST instead of FIN,
+     * and the peer reads that as `ECONNRESET` — so a response that completed
+     * perfectly can still surface as a failure. Each direction therefore shuts
+     * down its own output half, the writer thread gets a grace period to drain,
+     * and only then is the socket closed.
+     */
+    private fun pump(client: Socket, upstream: Socket): String {
+        var upError: String? = null
+        var downError: String? = null
+        var upBytes = 0L
+        var downBytes = 0L
+
         val up = Thread {
             try {
-                client.getInputStream().copyTo(upstream.getOutputStream())
+                upBytes = client.getInputStream().copyTo(upstream.getOutputStream())
+            } catch (e: Exception) {
+                upError = e.javaClass.simpleName
+            }
+            try {
+                upstream.shutdownOutput()
             } catch (_: Exception) {
             }
         }
         up.isDaemon = true
         up.start()
+
         try {
-            upstream.getInputStream().copyTo(client.getOutputStream())
+            downBytes = upstream.getInputStream().copyTo(client.getOutputStream())
+        } catch (e: Exception) {
+            downError = e.javaClass.simpleName
+        }
+        try {
+            client.getOutputStream().flush()
         } catch (_: Exception) {
         }
+        try {
+            client.shutdownOutput()
+        } catch (_: Exception) {
+        }
+
+        up.join(GRACE_MS)
+        val drained = !up.isAlive
         try {
             upstream.close()
         } catch (_: Exception) {
@@ -166,6 +233,13 @@ object HttpConnectProxy {
             client.close()
         } catch (_: Exception) {
         }
+
+        val how = if (downError == null && upError == null) {
+            if (drained) "clean" else "clean, writer undrained"
+        } else {
+            "down=${downError ?: "-"} up=${upError ?: "-"}${if (drained) "" else " undrained"}"
+        }
+        return "$how, $downBytes B down / $upBytes B up"
     }
 
     private fun reject(client: Socket, code: Int, reason: String) {
@@ -220,4 +294,10 @@ object HttpConnectProxy {
     }
 
     private val CRLF = byteArrayOf(13, 10)
+
+    /** How long to let the client->upstream writer drain before forcing close. */
+    private const val GRACE_MS = 3_000L
+
+    /** Upper bound on establishing the upstream connection. */
+    private const val CONNECT_TIMEOUT_MS = 20_000
 }

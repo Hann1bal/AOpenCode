@@ -440,6 +440,7 @@ object BackendManager {
             else
                 "proxy=NOT RUNNING (${HttpConnectProxy.lastError ?: "not started"}) — outbound fetch will fail",
         )
+        appendLine("proxy.conns=${HttpConnectProxy.connDump()}")
         appendLine("ripgrep=${Prefs.ripgrepStatus}")
         appendLine("rootfs=${Prefs.rootfsStatus}")
         appendLine("storage=${File(ctx.filesDir.absolutePath).usableSpace / 1048576} MB free")
