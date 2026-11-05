@@ -90,7 +90,9 @@ object DnsForwarder {
                 null
             } ?: continue
             try {
-                sock.send(DatagramPacket(reply, reply.size, packet.senderAddress, packet.senderPort))
+                sock.send(
+                    DatagramPacket(reply, reply.size, packet.address, packet.port),
+                )
             } catch (e: Exception) {
                 if (running) lastError = "send: ${e.javaClass.simpleName}: ${e.message}"
             }

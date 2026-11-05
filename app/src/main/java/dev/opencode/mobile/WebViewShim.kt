@@ -61,7 +61,7 @@ object WebViewShim {
      */
     fun killServiceWorkers() {
         try {
-            android.webkit.ServiceWorkerController.getInstance().removeAllServiceWorkerData()
+            android.webkit.ServiceWorkerController.getInstance().clearAllServiceWorkerData()
         } catch (_: Exception) {
             // No worker data, or the controller is unavailable; nothing to do.
         }
