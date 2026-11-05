@@ -5,16 +5,70 @@
     android:layout_height="match_parent"
     android:background="?android:attr/colorBackground">
 
-    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-        android:id="@+id/swipeRefresh"
+    <!-- The chip and the action button used to float over the WebView, and on a
+         narrow phone they sat on top of the page's own header and tab bar. They
+         now live in a real bar and the web content starts below it, so neither
+         side can cover the other. -->
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent">
+        android:layout_height="match_parent"
+        android:orientation="vertical">
 
-        <WebView
-            android:id="@+id/webView"
+        <FrameLayout
+            android:id="@+id/topBar"
             android:layout_width="match_parent"
-            android:layout_height="match_parent" />
-    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+            android:layout_height="wrap_content"
+            android:background="?android:attr/colorBackground"
+            android:elevation="4dp"
+            android:paddingStart="12dp"
+            android:paddingTop="10dp"
+            android:paddingEnd="12dp"
+            android:paddingBottom="10dp">
+
+            <!-- Current working mode. Tapping it opens the same screen as the
+                 button, so the state is always visible and one tap away from
+                 being changed. -->
+            <TextView
+                android:id="@+id/modeChip"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="start|center_vertical"
+                android:background="@drawable/bg_mode_chip"
+                android:clickable="true"
+                android:focusable="true"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="8dp"
+                android:text="@string/mode_local"
+                android:textColor="#FFFFFFFF"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <!-- Live session sharing entry -->
+            <com.google.android.material.floatingactionbutton.FloatingActionButton
+                android:id="@+id/peersButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end|center_vertical"
+                android:contentDescription="@string/open_peers"
+                android:src="@drawable/ic_stat_opencode"
+                app:backgroundTint="?android:attr/colorBackground"
+                app:fabCustomSize="42dp"
+                app:maxImageSize="21dp"
+                app:tint="?android:attr/textColorPrimary" />
+        </FrameLayout>
+
+        <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+            android:id="@+id/swipeRefresh"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <WebView
+                android:id="@+id/webView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+        </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+    </LinearLayout>
 
     <!-- Offline / reconnect banner -->
     <LinearLayout
@@ -36,36 +90,6 @@
             android:textColor="#FFFFFF"
             android:textSize="14sp" />
     </LinearLayout>
-
-    <!-- Current working mode. Tapping it opens the same screen as the FAB, so the
-         state is always visible and one tap away from being changed. -->
-    <TextView
-        android:id="@+id/modeChip"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|start"
-        android:layout_margin="12dp"
-        android:background="@drawable/bg_mode_chip"
-        android:clickable="true"
-        android:focusable="true"
-        android:paddingHorizontal="14dp"
-        android:paddingVertical="8dp"
-        android:text="@string/mode_local"
-        android:textColor="#FFFFFFFF"
-        android:textSize="13sp"
-        android:textStyle="bold" />
-
-    <!-- Live session sharing entry -->
-    <com.google.android.material.floatingactionbutton.FloatingActionButton
-        android:id="@+id/peersButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|end"
-        android:layout_margin="12dp"
-        android:contentDescription="@string/open_peers"
-        android:src="@drawable/ic_stat_opencode"
-        app:backgroundTint="?android:attr/colorBackground"
-        app:tint="?android:attr/textColorPrimary" />
 
     <!-- Startup progress overlay -->
     <LinearLayout

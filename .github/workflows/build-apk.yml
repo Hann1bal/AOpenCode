@@ -93,7 +93,10 @@ jobs:
           # On a tag push the tag is the version, so the string the app reports
           # cannot drift from the release it came from. Otherwise fall back to the
           # VERSION file in the repo.
-          GRADLE_ARGS="--no-daemon assembleRelease"
+          # lintRelease first: NewApi violations compile fine and crash on the
+          # device, so catching them here is the difference between a red build
+          # and a user-facing NoSuchMethodError.
+          GRADLE_ARGS="--no-daemon lintRelease assembleRelease"
           if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
             GRADLE_ARGS="$GRADLE_ARGS -PappVersion=${GITHUB_REF_NAME#v}"
           fi

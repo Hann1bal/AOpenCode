@@ -301,7 +301,11 @@ object RootfsExtractor {
                     buf.write(b)
                     if (buf.size() > 512) return null
                 }
-                buf.toString(Charsets.UTF_8)
+                // ByteArrayOutputStream.toString(Charset) is API 33 and this
+                // runs down to API 26 — calling it throws NoSuchMethodError on
+                // Android 12 and below, which took the whole wrapper pass down
+                // with it. The String constructor has been there since the start.
+                String(buf.toByteArray(), Charsets.UTF_8)
             }
         } catch (_: Exception) {
             return null

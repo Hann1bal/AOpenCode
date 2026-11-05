@@ -105,8 +105,11 @@ object CrashLog {
 
     /** The last few recorded steps, newest last. */
     fun recentPhases(n: Int = 14): String {
+        // split('\n'), not lines(): from API 35 java.lang.String has a member
+        // lines() that outranks the Kotlin extension and does not exist on
+        // Android 12, which is exactly how the rootfs pass died.
         val lines = tail()
-            .lines()
+            .split('\n')
             .filter { it.startsWith("phase:") || it.startsWith("FAILED") || it.startsWith("UNCAUGHT") }
         if (lines.isEmpty()) return "none"
         return lines.takeLast(n).joinToString(" | ")

@@ -186,6 +186,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupRefreshAndError() {
+        // Without this SwipeRefreshLayout assumes its child cannot scroll up and
+        // steals every downward drag, so scrolling a long session back through
+        // history keeps firing a full reload. The WebView knows its own scroll
+        // position; a refresh is only intended from the very top.
+        binding.swipeRefresh.setOnChildScrollUpCallback { _, _ ->
+            binding.webView.scrollY > 0
+        }
         binding.swipeRefresh.setOnRefreshListener {
             lifecycleScope.launch {
                 // A probe is a socket connect: off the main thread, or it throws

@@ -80,6 +80,19 @@ android {
         )
     }
 
+    lint {
+        // The one check that genuinely matters for this app. We compile against
+        // SDK 35 but run down to 26, so a method present in the 35 android.jar
+        // can be absent on the device and blow up at runtime, not build time.
+        // Two of those shipped before this gate existed:
+        // ByteArrayOutputStream.toString(Charset) (API 33) killed the entire
+        // rootfs pass on Android 12, and String.lines() would have done the
+        // same to the crash log. Narrowed to NewApi so it stays high-signal.
+        checkOnly += "NewApi"
+        abortOnError = true
+        textReport = true
+    }
+
     signingConfigs {
         create("release") {
             storeType = "PKCS12"
