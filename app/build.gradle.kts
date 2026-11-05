@@ -10,6 +10,23 @@ plugins {
 // launch failure can report which targetSdk it ran under.
 val targetSdkLevel = 28
 
+/**
+ * The release version the app reports.
+ *
+ * Hardcoding "1.0.0" made every diagnostics report and every update check lie:
+ * the running build was 1.0.18 while VERSION_NAME still said 1.0.0. The tag push
+ * passes `-PappVersion=<tag>`; otherwise the VERSION file at the repo root is
+ * the source, so the number exists in the tree rather than only in git metadata
+ * the CI checkout does not fetch.
+ */
+val appVersionName: String = run {
+    val fromProperty = (findProperty("appVersion") as? String)?.trim()?.removePrefix("v")
+    if (!fromProperty.isNullOrEmpty()) return@run fromProperty
+    val file = rootProject.file("VERSION")
+    val fromFile = if (file.exists()) file.readText().trim().removePrefix("v") else ""
+    fromFile.ifEmpty { "0.0.0" }
+}
+
 android {
     namespace = "dev.opencode.mobile"
     compileSdk = 35
@@ -26,8 +43,11 @@ android {
         targetSdk = targetSdkLevel
 
         buildConfigField("int", "TARGET_SDK", targetSdkLevel.toString())
+        // Kept at 1 on purpose: the APK is sideloaded over itself, and a bumped
+        // code with a debug key would force an uninstall first. The human-readable
+        // version is what tracks releases.
         versionCode = 1
-        versionName = "1.0.0"
+        versionName = appVersionName
 
         // Only arm64 — the bundled opencode backend is linux-arm64-musl
         ndk {

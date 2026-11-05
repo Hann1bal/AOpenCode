@@ -24,7 +24,7 @@ object Prefs {
     private const val KEY_LAST_UPDATE_CHECK = "last_update_check"
     private const val KEY_PEERS_JSON = "peers_json"
     private const val KEY_RIPGREP_STATUS = "ripgrep_status"
-    private const val KEY_SW_PURGE_STAMP = "sw_purge_stamp"
+    private const val KEY_SW_PURGE_STAMP = "sw_purge_stamp_v2"
 
     fun init(context: Context) {
         if (::prefs.isInitialized) return
@@ -99,8 +99,12 @@ object Prefs {
         get() = prefs.getString(KEY_RIPGREP_STATUS, "not checked") ?: "not checked"
         set(v) = prefs.edit().putString(KEY_RIPGREP_STATUS, v).apply()
 
-    /** Version code for which the service worker storage was last purged. */
-    var swPurgeStamp: Int
-        get() = prefs.getInt(KEY_SW_PURGE_STAMP, 0)
-        set(v) = prefs.edit().putInt(KEY_SW_PURGE_STAMP, v).apply()
+    /**
+     * Version name for which the service worker storage was last purged. A new key
+     * rather than the int one v1.0.18 wrote: reading an Int-backed entry as a
+     * String throws ClassCastException.
+     */
+    var swPurgeStamp: String
+        get() = prefs.getString(KEY_SW_PURGE_STAMP, "") ?: ""
+        set(v) = prefs.edit().putString(KEY_SW_PURGE_STAMP, v).apply()
 }

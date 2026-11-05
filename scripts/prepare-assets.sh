@@ -7,6 +7,7 @@
 #   2. musl loader + libc from Alpine Linux (aarch64)
 #   3. libstdc++ from Alpine Linux (aarch64)
 #   4. ripgrep from Alpine Linux community (aarch64, musl)
+#   5. pcre2 from Alpine Linux main (ripgrep's own shared-library dependency)
 #
 # Pinned versions + checksums are recorded in assets.lock for reproducibility.
 # Run this before `gradle assembleRelease` (CI does it automatically).
@@ -45,7 +46,7 @@ index_find() {
 }
 
 # --- 1. opencode musl binary -------------------------------------------------
-echo "==> [1/5] opencode linux-arm64-musl"
+echo "==> [1/6] opencode linux-arm64-musl"
 if [ -n "${OPENCODE_BINARY_URL:-}" ]; then
     # Fork build: fetch the linux-arm64-musl binary produced by the opencode
     # fork's fork-build workflow (includes the UpstreamSync module).
@@ -60,7 +61,7 @@ fi
 chmod 755 "$OUT_DIR/opencode"
 
 # --- 2. Alpine package index -------------------------------------------------
-echo "==> [2/5] Alpine package index (main)"
+echo "==> [2/6] Alpine package index (main)"
 index_fetch main main
 
 MUSL_APK="$(index_find main musl)"
@@ -77,7 +78,7 @@ fi
 echo "    musl=$MUSL_APK  libstdc++=$STDCPP_APK"
 
 # --- 3. musl loader + libc ---------------------------------------------------
-echo "==> [3/5] musl loader + libc"
+echo "==> [3/6] musl loader + libc"
 curl -fsSL "${ALPINE_MIRROR}/${ALPINE_VERSION}/main/aarch64/${MUSL_APK}" -o "$TMP/musl.apk"
 mkdir -p "$TMP/musl"
 tar xzf "$TMP/musl.apk" -C "$TMP/musl"
@@ -86,7 +87,7 @@ cp "$TMP/musl/lib/libc.musl-aarch64.so.1" "$OUT_DIR/libc.musl-aarch64.so.1"
 chmod 755 "$OUT_DIR/ld-musl-aarch64.so.1" "$OUT_DIR/libc.musl-aarch64.so.1"
 
 # --- 4. libstdc++ + libgcc ---------------------------------------------------
-echo "==> [4/5] libstdc++ + libgcc"
+echo "==> [4/6] libstdc++ + libgcc"
 curl -fsSL "${ALPINE_MIRROR}/${ALPINE_VERSION}/main/aarch64/${STDCPP_APK}" -o "$TMP/stdcpp.apk"
 mkdir -p "$TMP/stdcpp"
 tar xzf "$TMP/stdcpp.apk" -C "$TMP/stdcpp"
@@ -120,7 +121,7 @@ chmod 644 "$OUT_DIR/libgcc_s.so.1"
 # aarch64 musl build — only aarch64 *glibc*, which cannot run in our musl
 # runtime — and its auto-download path is unreachable anyway until DNS works. So
 # take Alpine's community package: built against the same musl we already ship.
-echo "==> [5/5] ripgrep (Alpine community, musl)"
+echo "==> [5/6] ripgrep (Alpine community, musl)"
 index_fetch community community
 RG_APK="$(index_find community ripgrep)"
 if [ -z "$RG_APK" ]; then
@@ -149,6 +150,31 @@ exec "$d/ld-musl-aarch64.so.1" --library-path "$d" "$d/rg.musl" "$@"
 SHIM
 chmod 755 "$OUT_DIR/rg"
 
+# --- 6. pcre2 --------------------------------------------------------------
+# Alpine's rg is linked against libpcre2-8.so.0, which is not part of the ripgrep
+# package and not part of musl. Without it the loader fails before rg runs:
+#   Error loading shared library libpcre2-8.so.0: No such file or directory
+# The main-repo package needs only musl itself, which we already ship.
+echo "==> [6/6] pcre2 (ripgrep dependency, Alpine main)"
+PCRE2_APK="$(index_find main pcre2)"
+if [ -z "$PCRE2_APK" ]; then
+    echo "ERROR: could not find pcre2 in Alpine main index" >&2
+    exit 1
+fi
+echo "    pcre2=$PCRE2_APK"
+curl -fsSL "${ALPINE_MIRROR}/${ALPINE_VERSION}/main/aarch64/${PCRE2_APK}" -o "$TMP/pcre2.apk"
+mkdir -p "$TMP/pcre2"
+tar xzf "$TMP/pcre2.apk" -C "$TMP/pcre2"
+PCRE2_REAL="$(find "$TMP/pcre2" -type f -name 'libpcre2-8.so.*.*' | head -1)"
+if [ -z "$PCRE2_REAL" ]; then
+    echo "ERROR: libpcre2-8.so.* not found inside pcre2 apk" >&2
+    exit 1
+fi
+# rg asks for the soname exactly; the loader resolves that name, not the versioned
+# file, so the copy has to carry the soname.
+cp "$PCRE2_REAL" "$OUT_DIR/libpcre2-8.so.0"
+chmod 644 "$OUT_DIR/libpcre2-8.so.0"
+
 # --- lock file ---------------------------------------------------------------
 echo "==> Writing assets.lock"
 {
@@ -158,12 +184,14 @@ echo "==> Writing assets.lock"
     echo "musl_apk=${MUSL_APK}"
     echo "stdcpp_apk=${STDCPP_APK}"
     echo "ripgrep_apk=${RG_APK}"
+    echo "pcre2_apk=${PCRE2_APK}"
     echo "sha256:opencode=$(sha256sum "$OUT_DIR/opencode" | cut -d' ' -f1)"
     echo "sha256:ld-musl=$(sha256sum "$OUT_DIR/ld-musl-aarch64.so.1" | cut -d' ' -f1)"
     echo "sha256:libc.musl=$(sha256sum "$OUT_DIR/libc.musl-aarch64.so.1" | cut -d' ' -f1)"
     echo "sha256:libstdc++=$(sha256sum "$OUT_DIR/libstdc++.so.6" | cut -d' ' -f1)"
     echo "sha256:libgcc_s=$(sha256sum "$OUT_DIR/libgcc_s.so.1" | cut -d' ' -f1)"
     echo "sha256:rg.musl=$(sha256sum "$OUT_DIR/rg.musl" | cut -d' ' -f1)"
+    echo "sha256:libpcre2-8=$(sha256sum "$OUT_DIR/libpcre2-8.so.0" | cut -d' ' -f1)"
 } > "$OUT_DIR/assets.lock"
 
 echo "==> Done. Assets:"

@@ -39,7 +39,13 @@ class BackendService : Service() {
         private const val IDLE_TIMEOUT_MS = 30L * 60 * 1000
     }
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    /**
+     * IO, not Main: extraction copies ~250 MB, and every health probe is a real
+     * socket connect. On Dispatchers.Main those calls drew NetworkOnMainThread-
+     * Exception, which health() swallows as "not healthy" — so the wait loop ran
+     * its full 60 seconds against a backend that was already up.
+     */
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var idleJob: Job? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -124,10 +130,17 @@ class BackendService : Service() {
     }
 
     private fun stopEverything() {
-        BackendManager.stop()
         idleJob?.cancel()
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        idleJob = null
+        // destroy() + waitFor() blocks up to three seconds; never on the caller's
+        // thread, which is usually the main one.
+        scope.launch {
+            BackendManager.stop()
+            withContext(Dispatchers.Main) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
+        }
     }
 
     private fun goForeground(text: String) {

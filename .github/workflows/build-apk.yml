@@ -90,7 +90,15 @@ jobs:
         # failure into the job summary, which is readable anonymously.
         run: |
           set +e
-          gradle --no-daemon assembleRelease 2>&1 | tee /tmp/gradle.log
+          # On a tag push the tag is the version, so the string the app reports
+          # cannot drift from the release it came from. Otherwise fall back to the
+          # VERSION file in the repo.
+          GRADLE_ARGS="--no-daemon assembleRelease"
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            GRADLE_ARGS="$GRADLE_ARGS -PappVersion=${GITHUB_REF_NAME#v}"
+          fi
+          echo "version args: $GRADLE_ARGS"
+          gradle $GRADLE_ARGS 2>&1 | tee /tmp/gradle.log
           code=${PIPESTATUS[0]}
           if [ "$code" -ne 0 ]; then
             {

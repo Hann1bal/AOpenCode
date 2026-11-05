@@ -19,10 +19,12 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import dev.opencode.mobile.databinding.ActivityMainBinding
 import dev.opencode.mobile.sync.PeerStore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity() {
 
@@ -166,10 +168,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupRefreshAndError() {
         binding.swipeRefresh.setOnRefreshListener {
-            if (BackendManager.health()) {
-                loadBackend()
-            } else {
-                wakeBackendAndLoad()
+            lifecycleScope.launch {
+                // A probe is a socket connect: off the main thread, or it throws
+                // NetworkOnMainThreadException and reads as "backend is down".
+                if (withContext(Dispatchers.IO) { BackendManager.health() }) {
+                    loadBackend()
+                } else {
+                    wakeBackendAndLoad()
+                }
             }
         }
         binding.retryButton.setOnClickListener { wakeBackendAndLoad() }
@@ -233,7 +239,10 @@ class MainActivity : AppCompatActivity() {
             var ready = false
             repeat(120) {
                 if (!isActive) return@launch
-                if (BackendManager.health()) {
+                // The probe has to leave the main thread: thrown on Main it is
+                // caught inside health() and reported as "not healthy", which
+                // made every start burn the full 60-second timeout.
+                if (withContext(Dispatchers.IO) { BackendManager.health() }) {
                     ready = true
                     return@repeat
                 }

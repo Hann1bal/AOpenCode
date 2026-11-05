@@ -73,8 +73,11 @@ object WebViewShim {
      * Must run before any WebView instance exists.
      */
     fun purgeServiceWorkers(ctx: Context) {
-        if (Prefs.swPurgeStamp == BuildConfig.VERSION_CODE) return
-        Prefs.swPurgeStamp = BuildConfig.VERSION_CODE
+        // Keyed on versionName, not versionCode: the code is pinned at 1 so the
+        // APK can be reinstalled over itself, and an int stamp would then only
+        // ever purge once for every release after the first.
+        if (Prefs.swPurgeStamp == BuildConfig.VERSION_NAME) return
+        Prefs.swPurgeStamp = BuildConfig.VERSION_NAME
         val dataDir = ctx.filesDir.parentFile ?: return
         for (name in SW_DIRS) {
             val dir = File(dataDir, "app_webview/$name")

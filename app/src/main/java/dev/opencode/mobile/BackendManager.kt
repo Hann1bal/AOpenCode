@@ -9,6 +9,7 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.ServerSocket
+import java.net.URI
 import java.net.URL
 import java.util.concurrent.TimeUnit
 
@@ -182,12 +183,35 @@ object BackendManager {
         // future versions may. The real protection is loopback-only + random port.
         env["OPENCODE_SERVER_USERNAME"] = "opencode"
         env["OPENCODE_SERVER_PASSWORD"] = Prefs.backendToken
-        // Never let a system proxy intercept loopback traffic
-        env.remove("HTTP_PROXY")
-        env.remove("HTTPS_PROXY")
-        env.remove("http_proxy")
-        env.remove("https_proxy")
-        env["NO_PROXY"] = "127.0.0.1,localhost"
+
+        // Outbound name resolution. musl reads /etc/resolv.conf, which Android
+        // does not give us, so it falls back to 127.0.0.1:53 — and this ROM
+        // refuses to bind that port, so a DNS forwarder cannot work. The proxy
+        // sidesteps DNS entirely: it sends the *name* through Android's own
+        // resolver. Bun's fetch honours these variables.
+        HttpConnectProxy.start()
+        val proxy = if (HttpConnectProxy.running) "http://127.0.0.1:${HttpConnectProxy.port}" else null
+        if (proxy != null) {
+            env["HTTP_PROXY"] = proxy
+            env["HTTPS_PROXY"] = proxy
+            env["http_proxy"] = proxy
+            env["https_proxy"] = proxy
+        } else {
+            env.remove("HTTP_PROXY")
+            env.remove("HTTPS_PROXY")
+            env.remove("http_proxy")
+            env.remove("https_proxy")
+        }
+        // Loopback must never round-trip through the proxy, and neither must the
+        // paired upstream: that connection is already known-good on the LAN and
+        // carries the live SSE feed we do not want rewritten.
+        val noProxy = mutableListOf("127.0.0.1", "localhost", "::1")
+        PeerStore.active()?.let { peer ->
+            URI(peer.baseUrl).host?.let { noProxy.add(it) }
+        }
+        val noProxyList = noProxy.joinToString(",")
+        env["NO_PROXY"] = noProxyList
+        env["no_proxy"] = noProxyList
 
         // Live session sharing: if a peer is paired, the forked backend follows
         // its durable event log and mirrors the upstream sessions locally.
@@ -325,7 +349,13 @@ object BackendManager {
         appendLine("mode=${PeerStore.active()?.let { "following ${it.name}" } ?: "local agent"}")
         appendLine(
             if (DnsForwarder.running) "dns=forwarder listening on 127.0.0.1:53"
-            else "dns=NOT RUNNING (${DnsForwarder.lastError ?: "not started"}) — outbound lookups will fail",
+            else "dns=forwarder unavailable (${DnsForwarder.lastError ?: "not started"}) — the proxy below covers this",
+        )
+        appendLine(
+            if (HttpConnectProxy.running)
+                "proxy=http://127.0.0.1:${HttpConnectProxy.port} — outbound names resolve through Android"
+            else
+                "proxy=NOT RUNNING (${HttpConnectProxy.lastError ?: "not started"}) — outbound fetch will fail",
         )
         appendLine("ripgrep=${Prefs.ripgrepStatus}")
         // "true/function" means the JS shim reached the document and URL.canParse exists.
@@ -384,5 +414,6 @@ object BackendManager {
         process = null
         port = -1
         DnsForwarder.stop()
+        HttpConnectProxy.stop()
     }
 }
