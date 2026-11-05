@@ -32,6 +32,15 @@ object RootfsExtractor {
     private const val ASSET = "runtime/env.zip"
     private const val LINKS_ENTRY = "__SYMLINKS__.txt"
 
+    /**
+     * Free space required before unpacking.
+     *
+     * The tree lands at roughly 230 MB; this leaves headroom for the wrapper
+     * pass and for whatever else the app is holding. Running out of space
+     * partway through is the one failure that looks like a crash from outside.
+     */
+    private const val MIN_FREE_BYTES = 300L * 1024 * 1024
+
     /** The merged Alpine tree. Not on PATH. */
     fun rootDir(ctx: Context): File = File(BackendManager.envDir(ctx), "root")
 
@@ -96,6 +105,20 @@ object RootfsExtractor {
             return msg
         }
 
+        // Preflight. Filling the partition mid-extract leaves a half-written tree
+        // and an exit that looks like a crash; saying so up front is both kinder
+        // and a far better signal. The threshold is generous on purpose — if it
+        // ever trips on a device with room to spare, the number in the message
+        // tells us that.
+        val free = File(ctx.filesDir.absolutePath).usableSpace
+        if (free < MIN_FREE_BYTES) {
+            val msg = "insufficient storage: ${free / 1048576} MB free, need ${MIN_FREE_BYTES / 1048576} MB"
+            Prefs.rootfsStatus = msg
+            CrashLog.note("rootfs preflight: $msg")
+            return msg
+        }
+        CrashLog.mark("rootfs extract begin (${free / 1048576} MB free)")
+
         val root = rootDir(ctx)
         val bin = binDir(ctx)
         root.deleteRecursively()
@@ -127,24 +150,39 @@ object RootfsExtractor {
                     files++
                 }
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             val msg = "rootfs unzip failed: ${e.javaClass.simpleName}: ${e.message}"
             Prefs.rootfsStatus = msg
+            CrashLog.note("rootfs unzip failed: ${e.javaClass.name}: ${e.message}")
             return msg
         }
+        CrashLog.mark("rootfs unzipped ($files files)")
 
-        val links = createLinks(manifestBytes ?: ByteArray(0), root)
-        val wrappers = writeWrappers(ctx, root, bin)
-        val shebangs = rewriteShebangs(root, bin)
-        val failures = verify(bin)
+        try {
+            val links = createLinks(manifestBytes ?: ByteArray(0), root)
+            CrashLog.mark("rootfs links made ($links)")
+            val wrappers = writeWrappers(ctx, root, bin)
+            CrashLog.mark("rootfs wrappers written ($wrappers)")
+            val shebangs = rewriteShebangs(root, bin)
+            CrashLog.mark("rootfs shebangs rewritten ($shebangs)")
+            val failures = verify(bin)
 
-        val summary = buildString {
-            append("$files files, $links symlinks, $wrappers wrappers, $shebangs shebangs rewritten")
-            if (failures.isNotEmpty()) append(" | FAILED: ").append(failures.joinToString(", "))
+            val summary = buildString {
+                append("$files files, $links symlinks, $wrappers wrappers, $shebangs shebangs rewritten")
+                if (failures.isNotEmpty()) append(" | FAILED: ").append(failures.joinToString(", "))
+            }
+            Prefs.rootfsStamp = BuildConfig.VERSION_NAME
+            Prefs.rootfsStatus = summary
+            CrashLog.mark("rootfs extract done")
+            return summary
+        } catch (e: Throwable) {
+            // No stamp is written, so the next launch retries rather than
+            // accepting a half-built tree as good.
+            val msg = "rootfs setup failed: ${e.javaClass.simpleName}: ${e.message}"
+            Prefs.rootfsStatus = msg
+            CrashLog.note("rootfs setup failed: ${e.javaClass.name}: ${e.message}")
+            return msg
         }
-        Prefs.rootfsStamp = BuildConfig.VERSION_NAME
-        Prefs.rootfsStatus = summary
-        return summary
     }
 
     /**
@@ -357,6 +395,9 @@ object RootfsExtractor {
                 if (bytes.size < 2 || bytes[0] != '#'.code.toByte() || bytes[1] != '!'.code.toByte()) continue
                 val newline = bytes.indexOf('\n'.code.toByte())
                 val lineEnd = if (newline == -1) bytes.size else newline
+                // A file whose second byte is a newline would make the length
+                // below negative and throw StringIndexOutOfBoundsException.
+                if (lineEnd < 2) continue
                 val line = String(bytes, 2, lineEnd - 2, Charsets.UTF_8).trimEnd('\r', ' ', '\t')
                 val tokens = line.split(Regex("\\s+")).filter { it.isNotEmpty() }
                 if (tokens.isEmpty()) continue

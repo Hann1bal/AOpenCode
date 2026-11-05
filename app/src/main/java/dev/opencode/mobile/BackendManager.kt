@@ -442,11 +442,16 @@ object BackendManager {
         )
         appendLine("ripgrep=${Prefs.ripgrepStatus}")
         appendLine("rootfs=${Prefs.rootfsStatus}")
+        appendLine("storage=${File(ctx.filesDir.absolutePath).usableSpace / 1048576} MB free")
         appendLine("tools=${Prefs.rootfsChecks}")
         // "true/function" means the JS shim reached the document and URL.canParse exists.
         appendLine("shim=${WebViewShim.installedState}")
         appendLine("sw=${WebViewShim.lastPurge}")
         appendLine("web.errors=${WebDiagnostics.dump()}")
+        // The last steps the process took before it died, newest last. If the app
+        // closed without a message, this names the step it was in.
+        appendLine("trace=${CrashLog.recentPhases()}")
+        appendLine("crash=${CrashLog.lastErrorLine()}")
         appendLine()
         appendLine("backend.log, last lines:")
         appendLine(logTail(ctx, 150).ifBlank { "(empty — the process produced no output)" })

@@ -82,6 +82,7 @@ class BackendService : Service() {
         scope.launch {
             try {
                 if (!BackendManager.isExtracted(this@BackendService)) {
+                    CrashLog.mark("extract backend")
                     withContext(Dispatchers.Main) { updateNotification("Unpacking backend… 0%") }
                     BackendManager.extract(this@BackendService) { frac ->
                         scope.launch(Dispatchers.Main) {
@@ -96,6 +97,7 @@ class BackendService : Service() {
                     RootfsExtractor.extract(this@BackendService)
                 }
                 if (!BackendManager.isRunning() || !BackendManager.health()) {
+                    CrashLog.mark("start backend")
                     withContext(Dispatchers.Main) { updateNotification("Starting OpenCode…") }
                     BackendManager.start(this@BackendService)
                 }
@@ -117,10 +119,14 @@ class BackendService : Service() {
                         updateNotification("Backend failed to start — tap to retry")
                     }
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
+                // Throwable, not Exception. An OutOfMemoryError or a LinkageError
+                // used to fall straight through here and take the process with it,
+                // which is what "it just closes during install" actually was.
+                CrashLog.note("FAILED: ${e.javaClass.name}: ${e.message}")
                 if (isActive) {
                     withContext(Dispatchers.Main) {
-                        updateNotification("Backend error: ${e.message ?: "unknown"} — tap to retry")
+                        updateNotification("Backend error: ${e.javaClass.simpleName}: ${e.message ?: "unknown"} — tap to retry")
                     }
                 }
             }
