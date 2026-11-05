@@ -177,7 +177,7 @@ object RootfsExtractor {
             CrashLog.mark("rootfs wrappers written ($wrappers)")
             val shebangs = rewriteShebangs(root, bin)
             CrashLog.mark("rootfs shebangs rewritten ($shebangs)")
-            val failures = verify(bin)
+            val failures = verify(ctx, bin)
 
             val summary = buildString {
                 append("$files files, $links symlinks, $wrappers wrappers, $shebangs shebangs rewritten")
@@ -243,11 +243,10 @@ object RootfsExtractor {
     /**
      * One wrapper per executable found in the Alpine `bin` and `usr/bin`.
      *
-     * Busybox applets are the special case: busybox picks its behaviour from
-     * argv[0], and going through the loader would set argv[0] to the busybox
-     * binary itself. Passing the applet name as the first argument is the
-     * documented equivalent (`busybox ls -l`), and `$(basename "$0")` keeps
-     * one identical script for every applet.
+     * Applets are the special case. `bin/cat` is a link to `usr/bin/coreutils`
+     * and `bin/sh` a link to `bin/busybox`, and both decide what to run from
+     * argv[0]. Handing the loader the link's own path makes argv[0] carry the
+     * applet name, which is the only form both families honour.
      */
     private fun writeWrappers(ctx: Context, root: File, bin: File): Int {
         val runtime = BackendManager.runtimeDir(ctx)
@@ -266,18 +265,23 @@ object RootfsExtractor {
             val real = canonical(entry) ?: continue
             if (!real.isFile || !isElf(real)) continue
 
-            // ${0##*/} rather than $(basename "$0"): the parameter expansion is
-            // a shell builtin, so the wrapper does not depend on finding
-            // basename on PATH. Under a bare ProcessBuilder environment that
-            // dependency made every multicall wrapper arrive with an empty
-            // applet name and die on its own usage message.
-            val applet =
-                if (real.name in MULTICALL && entry.name != real.name) " \"\${0##*/}\""
-                else ""
+            // An applet is a link whose target is a multicall binary, and what
+            // it runs is decided by argv[0]. So the wrapper hands the loader
+            // the LINK's path, not the target's: musl sets argv[0] to the path
+            // it was given without canonicalising it, so coreutils receives
+            // ".../bin/cat" and selects the cat applet.
+            //
+            // Passing the applet as the first argument instead — the documented
+            // form for busybox — does not work for GNU coreutils, which ignores
+            // it and dies on its own usage message. That was the
+            // "Try '/…/coreutils --help'" failure.
+            val program =
+                if (real.name in MULTICALL && entry.name != real.name) entry.absolutePath
+                else real.absolutePath
             putWrapper(
                 File(bin, entry.name),
                 "#!/system/bin/sh\n" +
-                    "exec \"$loader\" --library-path \"$libraryPath\" \"${real.absolutePath}\"$applet \"\$@\"\n",
+                    "exec \"$loader\" --library-path \"$libraryPath\" \"$program\" \"\$@\"\n",
             )
             written++
         }
@@ -491,17 +495,24 @@ object RootfsExtractor {
      * would, so this exercises wrappers, symlinks, the loader and library
      * resolution together rather than any one of them in isolation.
      */
-    private fun verify(bin: File): MutableList<String> {
+    private fun verify(ctx: Context, bin: File): MutableList<String> {
         val failures = mutableListOf<String>()
+        val home = BackendManager.homeDir(ctx)
         val results = VERIFICATIONS.map { (name, args) ->
             val outcome = try {
                 val builder = ProcessBuilder(listOf(File(bin, args[0]).absolutePath) + args.drop(1))
                     .redirectErrorStream(true)
-                // The agent gets the wrapper dir on PATH from BackendManager; a
-                // bare ProcessBuilder does not. Anything that resolves a
-                // command through PATH — `env bash`, for one — failed here
-                // while working fine in the real runtime. Test the way it runs.
-                builder.environment()["PATH"] = bin.absolutePath + ":/system/bin:/system/xbin"
+                // The agent gets these from BackendManager; a bare ProcessBuilder
+                // does not. Anything that resolves a command through PATH — `env
+                // bash`, for one — failed here while working fine in the real
+                // runtime, and npm dies with "uv_os_homedir returned ENOENT"
+                // without HOME. A check run in a different environment than the
+                // thing it checks only manufactures failures that are not real.
+                val env = builder.environment()
+                env["PATH"] = bin.absolutePath + ":/system/bin:/system/xbin"
+                env["HOME"] = home.absolutePath
+                env["USER"] = "aopencode"
+                env["LOGNAME"] = "aopencode"
                 val proc = builder.start()
                 val output = proc.inputStream.bufferedReader().readText().trim()
                 if (!proc.waitFor(30, TimeUnit.SECONDS)) {
