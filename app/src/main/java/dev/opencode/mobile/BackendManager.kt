@@ -92,6 +92,36 @@ object BackendManager {
         }
         File(dir, ".stamp").writeText(BuildConfig.VERSION_CODE.toString())
         Prefs.extractStamp = BuildConfig.VERSION_CODE
+        verifyRipgrep(ctx)
+    }
+
+    /**
+     * Runs the bundled ripgrep shim once, after extraction, and records the
+     * outcome. The agent's glob/grep tools depend on it, and a shim that is
+     * present but cannot exec looks identical to a missing one from the outside.
+     */
+    private fun verifyRipgrep(ctx: Context) {
+        val dir = runtimeDir(ctx)
+        val rg = File(dir, "rg")
+        if (!rg.exists()) {
+            Prefs.ripgrepStatus = "missing (not bundled)"
+            return
+        }
+        Prefs.ripgrepStatus = try {
+            val proc = ProcessBuilder(rg.absolutePath, "--version")
+                .directory(dir)
+                .redirectErrorStream(true)
+                .start()
+            val output = proc.inputStream.bufferedReader().readText().trim()
+            val finished = proc.waitFor(20, TimeUnit.SECONDS)
+            when {
+                !finished -> "timeout"
+                proc.exitValue() != 0 -> "exit=${proc.exitValue()} ${output.take(200)}"
+                else -> output.lineSequence().firstOrNull()?.ifBlank { "ok" } ?: "ok"
+            }
+        } catch (e: Exception) {
+            "${e.javaClass.simpleName}: ${e.message}"
+        }
     }
 
     fun isRunning(): Boolean = process?.isAlive == true
@@ -166,6 +196,10 @@ object BackendManager {
             env["OPENCODE_UPSTREAM_TOKEN"] = peer.token
             env["OPENCODE_UPSTREAM_ID"] = peer.id
         }
+
+        // Up before the backend: musl resolves to 127.0.0.1:53 by default, and
+        // without this every outbound lookup in the agent times out.
+        DnsForwarder.start()
 
         process = try {
             pb.start()
@@ -289,6 +323,11 @@ object BackendManager {
         val ws = workspaceDir(ctx)
         appendLine("workspace=${ws.absolutePath} writable=${ws.canWrite()}")
         appendLine("mode=${PeerStore.active()?.let { "following ${it.name}" } ?: "local agent"}")
+        appendLine(
+            if (DnsForwarder.running) "dns=forwarder listening on 127.0.0.1:53"
+            else "dns=NOT RUNNING (${DnsForwarder.lastError ?: "not started"}) — outbound lookups will fail",
+        )
+        appendLine("ripgrep=${Prefs.ripgrepStatus}")
         appendLine()
         appendLine("backend.log, last lines:")
         appendLine(logTail(ctx, 150).ifBlank { "(empty — the process produced no output)" })
@@ -342,5 +381,6 @@ object BackendManager {
         }
         process = null
         port = -1
+        DnsForwarder.stop()
     }
 }

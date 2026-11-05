@@ -23,6 +23,7 @@ object Prefs {
     private const val KEY_EXTRACT_STAMP = "extract_stamp"
     private const val KEY_LAST_UPDATE_CHECK = "last_update_check"
     private const val KEY_PEERS_JSON = "peers_json"
+    private const val KEY_RIPGREP_STATUS = "ripgrep_status"
 
     fun init(context: Context) {
         if (::prefs.isInitialized) return
@@ -87,4 +88,13 @@ object Prefs {
     var peersJson: String
         get() = prefs.getString(KEY_PEERS_JSON, "[]") ?: "[]"
         set(v) = prefs.edit().putString(KEY_PEERS_JSON, v).apply()
+
+    /**
+     * Result of running the bundled ripgrep shim at extract time. Finding the file
+     * is not proof it executes, and without this the difference between "absent"
+     * and "present but broken" is invisible from the UI.
+     */
+    var ripgrepStatus: String
+        get() = prefs.getString(KEY_RIPGREP_STATUS, "not checked") ?: "not checked"
+        set(v) = prefs.edit().putString(KEY_RIPGREP_STATUS, v).apply()
 }
