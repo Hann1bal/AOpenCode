@@ -131,6 +131,9 @@ class MainActivity : AppCompatActivity() {
                 request: WebResourceRequest?,
                 error: WebResourceError?
             ) {
+                WebDiagnostics.record(
+                    "${request?.method ?: "?"} ${request?.url} -> ${error?.errorCode} ${error?.description ?: ""}",
+                )
                 if (request?.isForMainFrame == true) {
                     runOnUiThread {
                         binding.progressOverlay.visibility = View.GONE
@@ -139,6 +142,22 @@ class MainActivity : AppCompatActivity() {
                         binding.swipeRefresh.isRefreshing = false
                     }
                 }
+            }
+
+            /**
+             * Every non-2xx the WebView saw, with its URL. This is what turns a
+             * bare "Not Found" toast into something diagnosable from a copied
+             * report. Note that `-> 404` on `/sw.js` is the shim blocking the
+             * service worker on purpose, not a fault.
+             */
+            override fun onReceivedHttpError(
+                view: WebView?,
+                request: WebResourceRequest?,
+                errorResponse: WebResourceResponse?
+            ) {
+                WebDiagnostics.record(
+                    "${request?.method ?: "?"} ${request?.url} -> ${errorResponse?.statusCode ?: 0}",
+                )
             }
 
             override fun shouldOverrideUrlLoading(

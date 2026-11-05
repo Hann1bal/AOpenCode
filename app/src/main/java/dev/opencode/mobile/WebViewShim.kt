@@ -72,17 +72,38 @@ object WebViewShim {
      *
      * Must run before any WebView instance exists.
      */
+    /** What the last purge actually removed, for the diagnostics report. */
+    @Volatile
+    var lastPurge: String = "not run"
+        private set
+
+    /**
+     * Removes service worker registrations and their caches from disk.
+     *
+     * The bundled web UI registers a Workbox worker with
+     * `navigateFallback: "/index.html"`, so once it activates it answers
+     * navigations out of its own precache and the WebView never asks us for the
+     * document — the only place the shim can be installed. WebView exposes no
+     * API to unregister a worker, so its storage is removed directly. Only the
+     * worker's own directory goes: localStorage, cookies and the HTTP cache
+     * stay.
+     *
+     * Runs on every cold start, not once per version: a controlling worker is
+     * never wanted here, and re-removing an empty directory costs nothing.
+     *
+     * Must run before any WebView instance exists.
+     */
     fun purgeServiceWorkers(ctx: Context) {
-        // Keyed on versionName, not versionCode: the code is pinned at 1 so the
-        // APK can be reinstalled over itself, and an int stamp would then only
-        // ever purge once for every release after the first.
-        if (Prefs.swPurgeStamp == BuildConfig.VERSION_NAME) return
-        Prefs.swPurgeStamp = BuildConfig.VERSION_NAME
-        val dataDir = ctx.filesDir.parentFile ?: return
+        val dataDir = ctx.filesDir.parentFile ?: run {
+            lastPurge = "no data dir"
+            return
+        }
+        val removed = mutableListOf<String>()
         for (name in SW_DIRS) {
             val dir = File(dataDir, "app_webview/$name")
-            if (dir.exists()) dir.deleteRecursively()
+            if (dir.exists() && dir.deleteRecursively()) removed.add(name)
         }
+        lastPurge = if (removed.isEmpty()) "nothing found in app_webview" else "removed ${removed.joinToString(",")}"
     }
 
     /**
@@ -185,8 +206,13 @@ object WebViewShim {
     private fun injectShim(html: String): String? {
         val match = HEAD.find(html) ?: return null
         val end = match.range.last + 1
-        val tag = "<script src=\"$SHIM_PATH\"></script>"
-        return html.substring(0, end) + tag + UNREGISTER_TAG + html.substring(end)
+        // Inlined first: a separate request can be served from cache, blocked, or
+        // simply arrive after the modules that need it. The `src` tag stays as the
+        // fallback for a document that does carry a CSP without 'unsafe-inline',
+        // where the inline block would be refused but a 'self' script is allowed.
+        val inline = "<script>${SHIM_JS}</script>"
+        val external = "<script src=\"$SHIM_PATH\"></script>"
+        return html.substring(0, end) + inline + external + UNREGISTER_TAG + html.substring(end)
     }
 
     /**

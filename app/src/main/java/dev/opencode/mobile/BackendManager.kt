@@ -263,6 +263,9 @@ object BackendManager {
         // Up before the backend: musl resolves to 127.0.0.1:53 by default, and
         // without this every outbound lookup in the agent times out.
         DnsForwarder.start()
+        // Also before the backend: glob and grep must find our rg instead of
+        // trying to download a glibc build they cannot run.
+        seedRipgrep(ctx)
 
         process = try {
             pb.start()
@@ -298,6 +301,36 @@ object BackendManager {
     /** The directories among [dirs] that exist, joined as a `:`-separated list. */
     private fun existing(vararg dirs: File): String? =
         dirs.filter { it.isDirectory }.takeIf { it.isNotEmpty() }?.joinToString(":") { it.absolutePath }
+
+    /**
+     * Places the bundled ripgrep where opencode looks for it *before* it decides
+     * to download one.
+     *
+     * `RipgrepBinary.filepath` tries PATH, then `<global.bin>/rg`, and only then
+     * falls back to a GitHub release. On this platform that fallback is worse
+     * than useless: `arm64-linux` maps to `aarch64-unknown-linux-gnu`, a glibc
+     * build that cannot run under our musl loader, and a failed fetch surfaces
+     * in the UI as a bare "Not Found" from the glob and grep tools.
+     *
+     * Seeding the file makes the download branch unreachable. Written with
+     * absolute paths because the bundled `runtime/rg` shim resolves its loader
+     * relative to itself and would not survive being copied here.
+     */
+    private fun seedRipgrep(ctx: Context) {
+        val runtime = runtimeDir(ctx)
+        val loader = File(runtime, "ld-musl-aarch64.so.1")
+        val rg = File(runtime, "rg.musl")
+        if (!loader.exists() || !rg.exists()) return
+        val target = File(File(File(homeDir(ctx), ".cache"), "opencode"), "bin")
+        if (!target.mkdirs() && !target.isDirectory) return
+        val script = File(target, "rg")
+        script.writeText(
+            "#!/system/bin/sh\n" +
+                "exec \"${loader.absolutePath}\" --library-path \"${runtime.absolutePath}\" " +
+                "\"${rg.absolutePath}\" \"\$@\"\n",
+        )
+        script.setExecutable(true, false)
+    }
 
     /** Last [maxLines] lines of the backend's captured stdout/stderr. */
     fun logTail(ctx: Context, maxLines: Int = 60): String {
@@ -405,6 +438,8 @@ object BackendManager {
         appendLine("tools=${Prefs.rootfsChecks}")
         // "true/function" means the JS shim reached the document and URL.canParse exists.
         appendLine("shim=${WebViewShim.installedState}")
+        appendLine("sw=${WebViewShim.lastPurge}")
+        appendLine("web.errors=${WebDiagnostics.dump()}")
         appendLine()
         appendLine("backend.log, last lines:")
         appendLine(logTail(ctx, 150).ifBlank { "(empty — the process produced no output)" })
