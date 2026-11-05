@@ -108,6 +108,14 @@ object RootfsExtractor {
      * @return a short human-readable summary, also stored in [Prefs] so the
      *   diagnostics report can show it without re-running anything.
      */
+    /**
+     * Serialized: ACTION_START and ACTION_WAKE can each launch this coroutine, and
+     * two passes into the same tree are destructive — the second one calls
+     * deleteRecursively() while the first is still writing, and the link pass
+     * then resolves against a half-built tree. The tell was the same archive
+     * yielding 471 links on one run and 499 on the next.
+     */
+    @Synchronized
     fun extract(ctx: Context): String {
         val zip = try {
             ctx.assets.open(ASSET)

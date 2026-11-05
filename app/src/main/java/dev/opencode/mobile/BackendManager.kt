@@ -84,7 +84,14 @@ object BackendManager {
             File(dir, "ld-musl-aarch64.so.1").exists()
     }
 
-    /** Copy bundled assets into app-private storage and mark executable. */
+    /**
+     * Copy bundled assets into app-private storage and mark executable.
+     *
+     * Serialized for the same reason as RootfsExtractor.extract: it deletes the
+     * runtime directory before repopulating it, so a second concurrent pass
+     * would pull the loader out from under the first.
+     */
+    @Synchronized
     fun extract(ctx: Context, onProgress: (Float) -> Unit = {}) {
         val dir = runtimeDir(ctx)
         dir.deleteRecursively()
@@ -447,6 +454,8 @@ object BackendManager {
         appendLine("tools=${Prefs.rootfsChecks}")
         // "true/function" means the JS shim reached the document and URL.canParse exists.
         appendLine("shim=${WebViewShim.installedState}")
+        // Why the shim did or did not land, when installedState says it did not.
+        appendLine("inject=${WebViewShim.lastInject}")
         appendLine("sw=${WebViewShim.lastPurge}")
         appendLine("web.errors=${WebDiagnostics.dump()}")
         // The last steps the process took before it died, newest last. If the app

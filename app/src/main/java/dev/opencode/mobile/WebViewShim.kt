@@ -136,6 +136,18 @@ object WebViewShim {
      * Returns null when the response is not HTML, letting the WebView re-request it
      * untouched rather than mis-wrapping a binary or a script.
      */
+    /**
+     * What the last document interception actually did.
+     *
+     * The shim's own probe can only report "not in the page". This names the
+     * reason we did not put it there — a non-HTML content type, a missing
+     * `<head>`, a failed fetch — which is the difference between guessing and
+     * knowing.
+     */
+    @Volatile
+    var lastInject: String = "not run"
+        private set
+
     private fun documentWithShim(url: Uri): WebResourceResponse? {
         val conn = try {
             (URL(url.toString()).openConnection() as HttpURLConnection).apply {
@@ -149,24 +161,41 @@ object WebViewShim {
                 setRequestProperty("Authorization", basicAuth())
             }
         } catch (e: Exception) {
+            lastInject = "connect failed: ${e.javaClass.simpleName}: ${e.message}"
             return null
         }
 
         val html: String
         val csp: String?
         try {
-            if (conn.responseCode != 200) return null
-            val type = conn.contentType ?: return null
-            if (!type.contains("text/html")) return null
+            if (conn.responseCode != 200) {
+                lastInject = "status ${conn.responseCode}"
+                return null
+            }
+            val type = conn.contentType
+            if (type == null) {
+                lastInject = "no content type"
+                return null
+            }
+            if (!type.contains("text/html")) {
+                lastInject = "not html: $type"
+                return null
+            }
             csp = conn.getHeaderField("Content-Security-Policy")
             html = conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
         } catch (e: Exception) {
+            lastInject = "read failed: ${e.javaClass.simpleName}: ${e.message}"
             return null
         } finally {
             conn.disconnect()
         }
 
-        val patched = injectShim(html) ?: return null
+        val patched = injectShim(html)
+        if (patched == null) {
+            lastInject = "no <head> in ${html.length} bytes"
+            return null
+        }
+        lastInject = "patched ${html.length} -> ${patched.length} bytes"
         val headers = HashMap<String, String>()
         headers["Cache-Control"] = "no-cache"
         if (!csp.isNullOrEmpty()) headers["Content-Security-Policy"] = csp
