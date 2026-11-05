@@ -312,7 +312,7 @@ object RootfsExtractor {
             "  _w=\"$b/\${_f##*/}\"",
             "  [ -e \"\$_w\" ] && continue",
             "  IFS= read -r _l <\"\$_f\" || _l=",
-            "  case \"\$_l\" in '#!'*) _s=\${_l\#'#!'} ;; *) continue ;; esac",
+            "  case \"\$_l\" in '#!'*) _s=\${_l#'#!'} ;; *) continue ;; esac",
             "  set -- \$_s",
             "  _i=\${1##*/}",
             "  if [ \"\$_i\" = env ]; then shift; _i=\${1##*/}; fi",
