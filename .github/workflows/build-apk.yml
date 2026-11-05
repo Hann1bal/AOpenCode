@@ -118,7 +118,19 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          [ -f /tmp/gradle.log ] || exit 0
+          if [ ! -f /tmp/gradle.log ]; then
+            # Gradle never ran — the failure was upstream of it (setup, assets,
+            # keystore). Exiting quietly here would leave the PREVIOUS build's log
+            # published under this rolling tag, which reads like a current
+            # diagnosis of a bug that was already fixed. Always publish something
+            # that describes this attempt.
+            {
+              echo "gradle did not run: the build failed before the assemble step."
+              echo "commit: $GITHUB_SHA"
+              echo "run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+              echo "The real error is in the failing step of that run, not here."
+            } > /tmp/gradle.log
+          fi
           # R8 writes the exact keep/dontwarn rules it wanted into missing_rules.txt,
           # but that file dies with the runner. Fold it into the published log.
           MISSING=app/build/outputs/mapping/release/missing_rules.txt
