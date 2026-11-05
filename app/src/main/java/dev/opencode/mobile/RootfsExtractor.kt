@@ -66,6 +66,13 @@ object RootfsExtractor {
         "find" to arrayOf("find", "--version"),
         "xargs" to arrayOf("xargs", "--version"),
         "awk" to arrayOf("awk", "BEGIN{print \"ok\"}"),
+        // Runtimes: actually evaluate something, not just print a version.
+        "node" to arrayOf("node", "-e", "console.log(6*7)"),
+        "npm" to arrayOf("npm", "--version"),
+        "pip" to arrayOf("pip3", "--version"),
+        "fd" to arrayOf("fd", "--version"),
+        "sqlite" to arrayOf("sqlite3", ":memory:", "select 6*7;"),
+        "rsync" to arrayOf("rsync", "--version"),
     )
 
     fun isReady(ctx: Context): Boolean =

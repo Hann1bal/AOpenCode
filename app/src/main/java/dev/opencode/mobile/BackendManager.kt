@@ -216,6 +216,13 @@ object BackendManager {
             File(root, "usr/share/perl5/vendor_perl"),
             File(root, "usr/share/perl5/site_perl"),
         )?.let { env["PERL5LIB"] = it }
+        // Alpine marks its Python as externally managed, so `pip install` refuses
+        // by default. Here the whole tree is app-writable and thrown away on
+        // every version bump, so the guard only blocks the useful case.
+        env["PIP_BREAK_SYSTEM_PACKAGES"] = "1"
+        // Pin npm's global prefix into the unpacked tree rather than let it
+        // resolve against a prefix it cannot see.
+        env["NPM_CONFIG_PREFIX"] = File(root, "usr").absolutePath
         // ssh refuses to run without a readable, writable ~/.ssh.
         File(home, ".ssh").mkdirs()
         // Passed for defense-in-depth; current opencode does not enforce it, but

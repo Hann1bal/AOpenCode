@@ -79,6 +79,23 @@ SEEDS = [
     "procps",
     "ca-certificates",
     "tzdata",
+    # Runtimes, so the agent can actually run what it writes.
+    "nodejs",
+    "npm",
+    "py3-pip",
+    "py3-setuptools",
+    "py3-wheel",
+    # Search, inspection and transfer tools that make a shell usable.
+    "fd",
+    "sqlite",
+    "file",
+    "tree",
+    "yq-go",
+    "moreutils",
+    "parallel",
+    "rsync",
+    "bind-tools",
+    "openssl",
 ]
 
 # Development, documentation and cache payloads: never useful at runtime.
