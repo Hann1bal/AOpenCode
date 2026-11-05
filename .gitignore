@@ -19,3 +19,6 @@ app/src/main/assets/runtime/
 # The opencode fork is a separate git repo (pushed to its own remote); do not
 # track it inside the app repo.
 opencode-fork/
+
+__pycache__/
+*.pyc
