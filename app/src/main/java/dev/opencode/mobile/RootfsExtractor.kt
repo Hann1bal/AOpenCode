@@ -2,6 +2,7 @@ package dev.opencode.mobile
 
 import android.content.Context
 import android.system.Os
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipInputStream
@@ -204,31 +205,136 @@ object RootfsExtractor {
         val libraryPath = listOf(File(root, "usr/lib"), File(root, "lib"), runtime)
             .joinToString(":") { it.absolutePath }
 
-        var written = 0
-        for (dir in listOf(File(root, "bin"), File(root, "usr/bin"))) {
-            val entries = dir.listFiles() ?: continue
-            for (entry in entries) {
-                val real = try {
-                    entry.canonicalFile
-                } catch (_: Exception) {
-                    continue
-                }
-                if (!real.isFile || !isElf(real)) continue
+        val sources = listOf(File(root, "bin"), File(root, "usr/bin"))
+            .flatMap { dir -> dir.listFiles()?.toList() ?: emptyList() }
 
-                val applet =
-                    if (real.name in MULTICALL && entry.name != real.name) " \"\$(basename \"\$0\")\""
-                    else ""
-                val script =
-                    "#!/system/bin/sh\n" +
-                        "exec \"$loader\" --library-path \"$libraryPath\" \"${real.absolutePath}\"$applet \"\$@\"\n"
-                val wrapper = File(bin, entry.name)
-                wrapper.writeText(script)
-                wrapper.setExecutable(true, true)
-                written++
-            }
+        var written = 0
+
+        // ELF first. Script wrappers below dispatch to an interpreter *wrapper*,
+        // so those have to exist before the second pass goes looking for them.
+        for (entry in sources) {
+            val real = canonical(entry) ?: continue
+            if (!real.isFile || !isElf(real)) continue
+
+            val applet =
+                if (real.name in MULTICALL && entry.name != real.name) " \"\$(basename \"\$0\")\""
+                else ""
+            putWrapper(
+                File(bin, entry.name),
+                "#!/system/bin/sh\n" +
+                    "exec \"$loader\" --library-path \"$libraryPath\" \"${real.absolutePath}\"$applet \"\$@\"\n",
+            )
+            written++
+        }
+
+        // Scripts. This pass is what actually puts `npm` and `pip` on PATH: they
+        // are not ELF at all but symlinks into node_modules and site-packages, so
+        // an ELF-only pass silently skips the entire package manager.
+        for (entry in sources) {
+            val real = canonical(entry) ?: continue
+            if (!real.isFile || isElf(real)) continue
+            val interp = interpreterFor(real, bin) ?: continue
+            // No `exec` here: it would replace the shell and skip the rehash.
+            val body = "#!/system/bin/sh\n" +
+                "\"${interp.absolutePath}\" \"${real.absolutePath}\" \"\$@\"\n" +
+                "_rc=\$?\n" +
+                rehashLoop(bin, ctx) +
+                "exit \$_rc\n"
+            putWrapper(File(bin, entry.name), body)
+            written++
         }
         return written
     }
+
+    /**
+     * Resolves the interpreter a script asks for to a wrapper we already built.
+     *
+     * Handles the `#!/usr/bin/env X` form by taking the next token, since `env`
+     * itself is not runnable here either. Returns null for anything we cannot
+     * satisfy, and refuses to point a wrapper at itself.
+     */
+    private fun interpreterFor(script: File, bin: File): File? {
+        val first = try {
+            script.inputStream().use { ins ->
+                val buf = ByteArrayOutputStream()
+                while (true) {
+                    val b = ins.read()
+                    if (b == -1 || b == '\n'.code) break
+                    buf.write(b)
+                    if (buf.size() > 512) return null
+                }
+                buf.toString(Charsets.UTF_8)
+            }
+        } catch (_: Exception) {
+            return null
+        }
+        if (!first.startsWith("#!")) return null
+        val tokens = first.substring(2).trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        if (tokens.isEmpty()) return null
+        var name = File(tokens[0]).name
+        if (name == "env") {
+            if (tokens.size < 2) return null
+            name = File(tokens[1]).name
+        }
+        val candidate = File(bin, name)
+        if (!candidate.absoluteFile.equals(script.absoluteFile) && candidate.exists()) return candidate
+        return null
+    }
+
+    /**
+     * A shell loop that makes whatever the package manager just installed
+     * reachable.
+     *
+     * `npm i -g` and `pip install` drop their entry points into a bin directory
+     * that is not on `PATH`, and each one is a script whose `#!/usr/bin/env
+     * node` shebang the kernel cannot resolve. Without this, a completely
+     * successful install still leaves the command unrunnable, which is the
+     * single most confusing failure mode of "I installed it, where is it".
+     *
+     * Written with shell builtins only — `read`, parameter expansion, `printf`,
+     * redirection — plus `chmod`, because this runs under `/system/bin/sh`
+     * where the bundled coreutils are exactly what we are trying to reach.
+     *
+     * Emitted after the real command runs, so it sees the installed files. The
+     * exit status is preserved.
+     */
+    private fun rehashLoop(bin: File, ctx: Context): String {
+        val dirs = listOf(
+            File(rootDir(ctx), "usr/bin"),
+            File(rootDir(ctx), "usr/local/bin"),
+            File(BackendManager.homeDir(ctx), ".local/bin"),
+        ).joinToString(" ") { "\"" + it.absolutePath + "/\"*" }
+        val b = bin.absolutePath
+        return listOf(
+            "# rehash: materialise wrappers for anything installed above",
+            "for _f in $dirs; do",
+            "  [ -f \"\$_f\" ] || continue",
+            "  _w=\"$b/\${_f##*/}\"",
+            "  [ -e \"\$_w\" ] && continue",
+            "  IFS= read -r _l <\"\$_f\" || _l=",
+            "  case \"\$_l\" in '#!'*) _s=\${_l\#'#!'} ;; *) continue ;; esac",
+            "  set -- \$_s",
+            "  _i=\${1##*/}",
+            "  if [ \"\$_i\" = env ]; then shift; _i=\${1##*/}; fi",
+            "  [ -n \"\$_i\" ] || continue",
+            "  [ -x \"$b/\$_i\" ] || continue",
+            "  printf '#!/system/bin/sh\\nexec \"%s/%s\" \"%s\" \"\$@\"\\n' \"$b\" \"\$_i\" \"\$_f\" >\"\$_w\"",
+            "  chmod 755 \"\$_w\" 2>/dev/null",
+            "done",
+        ).joinToString("\n", postfix = "\n")
+    }
+
+    private fun putWrapper(wrapper: File, body: String) {
+        wrapper.writeText(body)
+        wrapper.setExecutable(true, true)
+    }
+
+    private fun canonical(entry: File): File? =
+        try {
+            entry.canonicalFile
+        } catch (_: Exception) {
+            null
+        }
 
     /**
      * Repoints `#!` lines at the wrapper directory.
