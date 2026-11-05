@@ -28,15 +28,66 @@ object WebViewShim {
     private const val SHIM_PATH = "/__mobile-shim.js"
 
     /**
+     * The web UI registers a Workbox service worker in production:
+     *
+     *   entry.tsx:54  navigator.serviceWorker.register("/sw.js")
+     *
+     * A controlling service worker answers navigations and asset requests out of
+     * its own cache and never touches the WebView network stack, so
+     * shouldInterceptRequest — and with it the shim — is skipped entirely. Failing
+     * the registration keeps every request on a path we can rewrite.
+     */
+    private val BLOCKED_PATHS = setOf("/sw.js", "/registerSW.js")
+
+    /** Set by the shim itself; lets the UI prove the injection actually landed. */
+    @Volatile
+    var installedState: String = "not verified"
+        private set
+
+    fun verify(webView: android.webkit.WebView) {
+        try {
+            webView.evaluateJavascript(
+                "(window.__ocShimInstalled===true)+'/'+(typeof URL.canParse)",
+            ) { value -> installedState = value ?: "no response" }
+        } catch (e: Exception) {
+            installedState = "verify failed: ${e.javaClass.simpleName}"
+        }
+    }
+
+    /**
+     * Drops any service worker left over from an earlier run. Without this, a
+     * worker registered before the shim existed keeps serving the unpatched
+     * document from its precache forever.
+     */
+    fun killServiceWorkers() {
+        try {
+            android.webkit.ServiceWorkerController.getInstance().removeAllServiceWorkerData()
+        } catch (_: Exception) {
+            // No worker data, or the controller is unavailable; nothing to do.
+        }
+    }
+
+    /**
      * @param mainFrame only the document itself is rewritten; every other resource
      *   (including the `/api/event` SSE stream) is left for the WebView to handle
      *   natively, because proxying a stream here would buffer it.
      */
     fun handle(url: Uri, mainFrame: Boolean): WebResourceResponse? {
+        if (url.path in BLOCKED_PATHS) return blockedServiceWorker()
         if (url.path == SHIM_PATH) return shimScript()
         if (!mainFrame) return null
         return documentWithShim(url)
     }
+
+    private fun blockedServiceWorker(): WebResourceResponse =
+        WebResourceResponse(
+            "text/plain",
+            "utf-8",
+            404,
+            "Service worker disabled",
+            emptyMap(),
+            ByteArrayInputStream(ByteArray(0)),
+        )
 
     private fun shimScript(): WebResourceResponse =
         response(SHIM_JS.toByteArray(Charsets.UTF_8), "application/javascript")
@@ -206,6 +257,12 @@ object WebViewShim {
         return JSON.parse(JSON.stringify(value));
       };
     } catch (e) {}
+  }
+
+  // Marker so the app can confirm the shim actually ran, rather than assuming the
+  // interception reached the document.
+  if (typeof window !== 'undefined') {
+    window.__ocShimInstalled = true;
   }
 })();
 """

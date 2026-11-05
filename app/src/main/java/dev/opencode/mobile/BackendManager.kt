@@ -328,6 +328,8 @@ object BackendManager {
             else "dns=NOT RUNNING (${DnsForwarder.lastError ?: "not started"}) — outbound lookups will fail",
         )
         appendLine("ripgrep=${Prefs.ripgrepStatus}")
+        // "true/function" means the JS shim reached the document and URL.canParse exists.
+        appendLine("shim=${WebViewShim.installedState}")
         appendLine()
         appendLine("backend.log, last lines:")
         appendLine(logTail(ctx, 150).ifBlank { "(empty — the process produced no output)" })

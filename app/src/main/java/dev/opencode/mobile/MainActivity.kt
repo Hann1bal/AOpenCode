@@ -75,6 +75,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupWebView() {
+        // A service worker registered by an earlier run keeps serving the
+        // unpatched document from its own cache, out of reach of the shim.
+        WebViewShim.killServiceWorkers()
+
         binding.webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -96,6 +100,7 @@ class MainActivity : AppCompatActivity() {
                 binding.progressOverlay.visibility = View.GONE
                 binding.errorOverlay.visibility = View.GONE
                 binding.swipeRefresh.isRefreshing = false
+                view?.let { WebViewShim.verify(it) }
             }
 
             /**
