@@ -27,6 +27,24 @@ val appVersionName: String = run {
     fromFile.ifEmpty { "0.0.0" }
 }
 
+/**
+ * The signing key.
+ *
+ * A committed PKCS12 keystore, so every build is signed by the same key and a
+ * new APK installs straight over the old one. Without a stable key each CI
+ * runner creates its own debug keystore, and Android rejects the update with
+ * INSTALL_FAILED_UPDATE_INCOMPATIBLE — the "uninstall it first" problem.
+ *
+ * `KEYSTORE_PATH` still overrides this for a real release key. Blank counts as
+ * unset: the workflow passes every one of these through from a secret, and an
+ * unset secret arrives as an empty string rather than a missing variable.
+ */
+fun envOrNull(name: String): String? = System.getenv(name)?.takeIf { it.isNotBlank() }
+
+val releaseKeystore: File =
+    envOrNull("KEYSTORE_PATH")?.let { rootProject.file(it) }
+        ?: rootProject.file("keystore/aopencode.p12")
+
 android {
     namespace = "dev.opencode.mobile"
     compileSdk = 35
@@ -64,14 +82,11 @@ android {
 
     signingConfigs {
         create("release") {
-            // CI provides these via env vars / secrets. Local debug builds fall back to debug signing.
-            val ksPath = System.getenv("KEYSTORE_PATH")
-            if (ksPath != null && file(ksPath).exists()) {
-                storeFile = file(ksPath)
-                storePassword = System.getenv("KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("KEY_ALIAS")
-                keyPassword = System.getenv("KEY_PASSWORD")
-            }
+            storeType = "PKCS12"
+            storeFile = releaseKeystore
+            storePassword = envOrNull("KEYSTORE_PASSWORD") ?: "aopencode"
+            keyAlias = envOrNull("KEY_ALIAS") ?: "aopencode"
+            keyPassword = envOrNull("KEY_PASSWORD") ?: "aopencode"
         }
     }
 
@@ -83,10 +98,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Without a CI keystore the release APK would come out unsigned and
-            // refuse to install, so fall back to the debug signing config.
-            val ksPath = System.getenv("KEYSTORE_PATH")
-            signingConfig = if (ksPath != null && file(ksPath).exists()) {
+            // Without a usable keystore the release APK would come out unsigned
+            // and refuse to install, so fall back to debug signing.
+            signingConfig = if (releaseKeystore.exists()) {
                 signingConfigs.getByName("release")
             } else {
                 signingConfigs.getByName("debug")
