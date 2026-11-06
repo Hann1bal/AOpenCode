@@ -110,6 +110,12 @@ object DiagServer {
                 lastCall = "$method $path"
                 when {
                     path == "/diag/ping" -> reply(s, 200, "ok\n")
+                    // The proxy keeps a bounded record of every tunnel: method,
+                    // path, upstream host and how it ended. The agent's 404 body
+                    // is written by a server that does not have the route it was
+                    // given, and this is the only place that says what route that
+                    // was. Reading it here beats reasoning about the composer.
+                    path == "/diag/conns" -> reply(s, 200, HttpConnectProxy.connDump() + "\n")
                     path.startsWith("/diag/exec") -> {
                         val len = headers["content-length"]?.toIntOrNull() ?: 0
                         val cmd = String(readExact(input, len), Charsets.UTF_8).trim()
@@ -128,9 +134,17 @@ object DiagServer {
     }
 
     private fun exec(ctx: Context, cmd: String, socket: Socket) {
-        val bash = File(RootfsExtractor.binDir(ctx), "bash")
-        if (!bash.isFile) {
-            reply(socket, 503, "no bash wrapper at ${bash.absolutePath}\n")
+        // Bionic's sh, not the bundled bash. The bundled bash cannot resolve a
+        // bare command name here: its PATH lookup uses faccessat2, which this
+        // ROM's seccomp filter traps as SIGSYS, so `ls` dies with 159 while the
+        // identical absolute path returns 0. See the note in
+        // BackendManager.applyAgentEnv, which sets the agent's SHELL to the
+        // same interpreter -- running the diagnostic here rather than in bash
+        // is what keeps this endpoint measuring the environment the agent
+        // actually has, and it makes bare commands usable over diag.
+        val shell = File("/system/bin/sh")
+        if (!shell.isFile) {
+            reply(socket, 503, "no shell at ${shell.absolutePath}\n")
             return
         }
         // Output goes to a file, not a pipe. A pipe needs a reader kept in step
@@ -141,7 +155,7 @@ object DiagServer {
         // pipe here, so there is nothing to leak.
         val outFile = File(ctx.cacheDir, "diag-${System.nanoTime()}.out")
         val proc = try {
-            val pb = ProcessBuilder(bash.absolutePath, "-c", cmd)
+            val pb = ProcessBuilder(shell.absolutePath, "-c", cmd)
                 .redirectErrorStream(true)
                 .redirectOutput(outFile)
                 .directory(BackendManager.workspaceDir(ctx))

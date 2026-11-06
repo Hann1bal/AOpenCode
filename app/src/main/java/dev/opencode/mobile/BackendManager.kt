@@ -191,6 +191,20 @@ object BackendManager {
         env["PATH"] = listOf(envBin.absolutePath, dir.absolutePath, "/system/bin", "/bin")
             .filter { File(it).isDirectory }
             .joinToString(":")
+        // The agent's shell must be bionic's, not the bundled bash. Android's
+        // untrusted_app seccomp filter traps faccessat2 (aarch64 syscall 439)
+        // with SIGSYS rather than returning ENOSYS, so there is no fallback, and
+        // bash uses it for its PATH lookup: every bare command dies with 159 the
+        // moment the lookup finds a candidate. Measured on the device --
+        // faccessat(48) and newfstatat(79) return normally, faccessat2(439)
+        // takes signal 31, and `bash -c 'PATH=/nonexistent ls'` exits 127
+        // instead of dying, which pins the lookup as the trigger. /system/bin/sh
+        // resolves the same bare names via faccessat and execs the musl tools
+        // without trouble. opencode reads this through process.env.SHELL
+        // (core/src/shell/select.ts), and `sh` is not in its deny list.
+        // The cost is bashisms: ash is POSIX-only. Still strictly better than a
+        // shell in which `ls` is fatal.
+        env["SHELL"] = "/system/bin/sh"
         // musl ships no trust store and /etc/ssl does not exist here, so every
         // TLS client in the tree has to be pointed at the bundled bundle by hand.
         val caBundle = File(root, "etc/ssl/certs/ca-certificates.crt")
