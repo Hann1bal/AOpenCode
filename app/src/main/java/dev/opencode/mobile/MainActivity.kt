@@ -31,6 +31,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private var readyJob: Job? = null
     private var loadedUrl: String? = null
+    private var runtimeManifest: RuntimeInstaller.Manifest? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -49,10 +50,16 @@ class MainActivity : AppCompatActivity() {
         setupRefreshAndError()
         renderModeChip()
 
-        // Bring the backend up (or wake it from idle)
-        startService(Intent(this, BackendService::class.java).setAction(BackendService.ACTION_WAKE))
-
-        awaitBackendAndLoad()
+        // The backend binary is not inside the APK. Nothing can run until it is
+        // on disk, so the gate comes before the service is even woken. A
+        // runtime-update notification forces the gate open even when a binary
+        // is already installed, so the newer one can be fetched in its place.
+        val forceRuntime = intent?.getBooleanExtra(EXTRA_FORCE_RUNTIME, false) == true
+        if (RuntimeInstaller.isInstalled(this) && !forceRuntime) {
+            startBackend()
+        } else {
+            showRuntimeGate()
+        }
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -222,11 +229,125 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun wakeBackendAndLoad() {
+    private fun startBackend() {
+        binding.runtimeOverlay.visibility = View.GONE
         binding.progressOverlay.visibility = View.VISIBLE
         binding.errorOverlay.visibility = View.GONE
         startService(Intent(this, BackendService::class.java).setAction(BackendService.ACTION_WAKE))
         awaitBackendAndLoad()
+    }
+
+    private fun wakeBackendAndLoad() {
+        if (!RuntimeInstaller.isInstalled(this)) {
+            showRuntimeGate()
+            return
+        }
+        startBackend()
+    }
+
+    /**
+     * Asks for the runtime before spending the user's bandwidth on it.
+     *
+     * The manifest is read first because the question has to carry a number:
+     * "download?" is not a choice, "download 241 MB?" is.
+     */
+    private fun showRuntimeGate() {
+        binding.progressOverlay.visibility = View.GONE
+        binding.errorOverlay.visibility = View.GONE
+        binding.runtimeOverlay.visibility = View.VISIBLE
+        binding.runtimeProgress.visibility = View.GONE
+        binding.runtimeStatus.text = getString(R.string.runtime_checking)
+        binding.runtimeDownloadButton.visibility = View.GONE
+        binding.runtimeLaterButton.visibility = View.VISIBLE
+        binding.runtimeDownloadButton.setOnClickListener { beginRuntimeDownload() }
+        binding.runtimeLaterButton.setOnClickListener {
+            binding.runtimeStatus.text = getString(R.string.runtime_dismissed)
+        }
+
+        lifecycleScope.launch {
+            val manifest = withContext(Dispatchers.IO) { RuntimeInstaller.fetchManifest() }
+            if (!isActive) return@launch
+            if (manifest == null) {
+                binding.runtimeStatus.text = getString(R.string.runtime_no_manifest) +
+                    "\n" + (RuntimeInstaller.lastError ?: "")
+                binding.runtimeDownloadButton.text = getString(R.string.retry)
+                binding.runtimeDownloadButton.visibility = View.VISIBLE
+                return@launch
+            }
+            runtimeManifest = manifest
+            // Hashing 240 MB is seconds on flash and minutes on the main thread,
+            // so it stays on IO. If the file already on disk matches the
+            // manifest there is nothing to download and the gate closes itself.
+            binding.runtimeStatus.text = getString(R.string.runtime_verifying)
+            val adopted = withContext(Dispatchers.IO) {
+                RuntimeInstaller.adoptExisting(this@MainActivity, manifest)
+            }
+            if (!isActive) return@launch
+            if (adopted) {
+                startBackend()
+                return@launch
+            }
+            val installed = RuntimeInstaller.installedSha(this@MainActivity)
+            val stale = installed.isNotEmpty() && installed != manifest.sha256
+            binding.runtimeStatus.text = getString(
+                if (stale) R.string.runtime_update else R.string.runtime_ready,
+                megabytes(manifest.size),
+            )
+            binding.runtimeDownloadButton.text = getString(
+                if (stale) R.string.runtime_download_update else R.string.runtime_download,
+            )
+            binding.runtimeDownloadButton.visibility = View.VISIBLE
+        }
+    }
+
+    /**
+     * Streams the binary in, off the main thread, and reports progress as it
+     * lands. A failure keeps the partial file: the retry resumes from where this
+     * one stopped instead of starting 240 MB over.
+     */
+    private fun beginRuntimeDownload() {
+        val manifest = runtimeManifest ?: return
+        Prefs.runtimeConsent = "granted"
+        binding.runtimeDownloadButton.visibility = View.GONE
+        binding.runtimeLaterButton.visibility = View.GONE
+        binding.runtimeProgress.visibility = View.VISIBLE
+
+        lifecycleScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                RuntimeInstaller.install(this@MainActivity, manifest) { done, total ->
+                    if (total <= 0) return@install
+                    val percent = ((done * 100) / total).toInt()
+                    runOnUiThread {
+                        binding.runtimeProgress.progress =
+                            ((done * 1000) / total).toInt().coerceIn(0, 1000)
+                        binding.runtimeStatus.text = getString(
+                            R.string.runtime_progress, megabytes(done), megabytes(total), percent,
+                        )
+                    }
+                }
+            }
+            if (!isActive) return@launch
+            if (ok) {
+                binding.runtimeStatus.text = getString(R.string.runtime_done)
+                binding.runtimeProgress.visibility = View.GONE
+                startBackend()
+            } else {
+                binding.runtimeProgress.visibility = View.GONE
+                binding.runtimeStatus.text = getString(
+                    R.string.runtime_failed, RuntimeInstaller.lastError ?: "unknown",
+                )
+                binding.runtimeDownloadButton.text = getString(R.string.retry)
+                binding.runtimeDownloadButton.visibility = View.VISIBLE
+                binding.runtimeLaterButton.visibility = View.VISIBLE
+            }
+        }
+    }
+
+    private fun megabytes(bytes: Long): String = String.format("%.1f MB", bytes / 1048576.0)
+
+    companion object {
+        /** Opens the runtime gate even when a binary is already installed. */
+        const val EXTRA_FORCE_RUNTIME = "force_runtime_update"
     }
 
     /**
@@ -302,7 +423,11 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         if (::binding.isInitialized) {
-            startService(Intent(this, BackendService::class.java).setAction(BackendService.ACTION_WAKE))
+            if (RuntimeInstaller.isInstalled(this)) {
+                startService(
+                    Intent(this, BackendService::class.java).setAction(BackendService.ACTION_WAKE),
+                )
+            }
             renderModeChip()
             // Switching mode restarts the backend, possibly on a new port, so the
             // page we are holding is stale. The flag is explicit because the port

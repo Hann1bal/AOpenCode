@@ -32,9 +32,55 @@ object UpdateChecker {
             val latest = withContext(Dispatchers.IO) { fetchLatestTag(repo) }
             if (latest != null && isNewer(latest, BuildConfig.VERSION_NAME)) {
                 notifyAvailable(context, latest, repo)
+                return
             }
+            // The backend binary is released on its own schedule, apart from the
+            // APK. It is checked second and skipped while an APK update is
+            // pending: offering a 240 MB runtime download and then immediately
+            // asking for a reinstall of the app would be a bad hour.
+            checkRuntime(context)
         } catch (_: Exception) {
             // silent — update checks must never crash the app
+        }
+    }
+
+    /**
+     * Offers the backend binary when the fork has been rebuilt and the copy on
+     * disk is stale. Compared by sha256, not by version string, so a rebuild
+     * that produced identical bytes does not ask for 240 MB again.
+     */
+    private suspend fun checkRuntime(context: Context) {
+        val manifest = withContext(Dispatchers.IO) { RuntimeInstaller.fetchManifest() } ?: return
+        val installed = RuntimeInstaller.installedSha(context)
+        // Empty means nothing is installed yet; the activity's own gate covers
+        // that case with a progress bar, which beats a notification.
+        if (installed.isEmpty() || installed == manifest.sha256) return
+        notifyRuntime(context, manifest.size)
+    }
+
+    private fun notifyRuntime(context: Context, sizeBytes: Long) {
+        val mb = sizeBytes / 1048576.0
+        val notif = NotificationCompat.Builder(context, CHANNEL_UPDATES)
+            .setContentTitle("Backend runtime update")
+            .setContentText("%.1f MB — tap to install".format(mb))
+            .setSmallIcon(R.drawable.ic_stat_opencode)
+            .setAutoCancel(true)
+            .setContentIntent(
+                android.app.PendingIntent.getActivity(
+                    context, 1,
+                    Intent(context, MainActivity::class.java)
+                        .putExtra(MainActivity.EXTRA_FORCE_RUNTIME, true)
+                        .addFlags(
+                            Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP,
+                        ),
+                    android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+                )
+            )
+            .build()
+        try {
+            androidx.core.app.NotificationManagerCompat.from(context).notify(203, notif)
+        } catch (_: SecurityException) {
+            // notification permission not granted yet
         }
     }
 

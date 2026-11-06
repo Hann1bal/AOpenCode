@@ -96,6 +96,16 @@ class BackendService : Service() {
                     withContext(Dispatchers.Main) { updateNotification("Installing environment…") }
                     RootfsExtractor.extract(this@BackendService)
                 }
+                // The backend binary is downloaded, not bundled. Starting
+                // without it throws, and a service that crashes on a missing
+                // runtime is worse than one that waits: the gate lives in the
+                // activity, so here we just say what is missing.
+                if (!RuntimeInstaller.isInstalled(this@BackendService)) {
+                    withContext(Dispatchers.Main) {
+                        updateNotification("Runtime not downloaded — open the app to install it")
+                    }
+                    return@launch
+                }
                 if (!BackendManager.isRunning() || !BackendManager.health()) {
                     CrashLog.mark("start backend")
                     withContext(Dispatchers.Main) { updateNotification("Starting OpenCode…") }

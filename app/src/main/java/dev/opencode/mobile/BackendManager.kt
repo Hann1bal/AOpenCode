@@ -71,18 +71,21 @@ object BackendManager {
     private fun homeBase(ctx: Context): File = File(ctx.filesDir, "backend").also { it.mkdirs() }
 
     /**
-     * Whether the bundled runtime on disk belongs to *this* version.
+     * Whether the bundled support files on disk belong to *this* version.
      *
      * Keyed on versionName because versionCode never moves: with the code as the
      * stamp, an update installed new assets into the APK and then reused the old
      * extracted binaries forever.
+     *
+     * The `opencode` binary itself is deliberately not part of this check. It is
+     * downloaded, not bundled, and carries its own digest stamp — folding it in
+     * here would tie a 240 MB download to the app's release cycle again.
      */
     fun isExtracted(ctx: Context): Boolean {
         val dir = runtimeDir(ctx)
         val stamp = File(dir, ".stamp")
         return stamp.exists() &&
             stamp.readText() == BuildConfig.VERSION_NAME &&
-            File(dir, "opencode").exists() &&
             File(dir, "ld-musl-aarch64.so.1").exists()
     }
 
@@ -96,6 +99,20 @@ object BackendManager {
     @Synchronized
     fun extract(ctx: Context, onProgress: (Float) -> Unit = {}) {
         val dir = runtimeDir(ctx)
+        // The downloaded backend is parked outside the directory while it is
+        // wiped, then put back. Deleting it here would ask every app update to
+        // re-fetch 240 MB, which is the whole cost this layout exists to avoid.
+        val keep = File(ctx.filesDir, "runtime-keep")
+        val keepNames = listOf("opencode", ".opencode-sha")
+        keep.deleteRecursively()
+        keep.mkdirs()
+        keepNames.forEach { name ->
+            val f = File(dir, name)
+            if (f.exists() && !f.renameTo(File(keep, name))) {
+                throw IllegalStateException("could not set the downloaded runtime aside")
+            }
+        }
+
         dir.deleteRecursively()
         dir.mkdirs()
         val names = ctx.assets.list("runtime")?.toList() ?: emptyList()
@@ -110,6 +127,15 @@ object BackendManager {
             File(dir, name).setExecutable(true, true)
             onProgress((i + 1f) / total)
         }
+
+        keepNames.forEach { name ->
+            val f = File(keep, name)
+            if (f.exists() && !f.renameTo(File(dir, name))) {
+                throw IllegalStateException("could not restore the downloaded runtime")
+            }
+        }
+        keep.deleteRecursively()
+
         File(dir, ".stamp").writeText(BuildConfig.VERSION_NAME)
         Prefs.extractStamp = BuildConfig.VERSION_NAME
         verifyRipgrep(ctx)
@@ -491,6 +517,13 @@ object BackendManager {
                 "proxy=NOT RUNNING (${HttpConnectProxy.lastError ?: "not started"}) — outbound fetch will fail",
         )
         appendLine("proxy.conns=${HttpConnectProxy.connDump()}")
+        // The backend binary is downloaded, so whether it is actually present,
+        // which digest it carries, and why a fetch failed all have to be
+        // readable — otherwise "the app never starts" has no evidence behind it.
+        appendLine("runtime.installed=${RuntimeInstaller.isInstalled(ctx)}")
+        appendLine("runtime.sha=${RuntimeInstaller.installedSha(ctx).ifBlank { "(none)" }}")
+        appendLine("runtime.consent=${Prefs.runtimeConsent}")
+        appendLine("runtime.error=${RuntimeInstaller.lastError ?: "none"}")
         appendLine("ripgrep=${Prefs.ripgrepStatus}")
         appendLine("rootfs=${Prefs.rootfsStatus}")
         appendLine("storage=${File(ctx.filesDir.absolutePath).usableSpace / 1048576} MB free")

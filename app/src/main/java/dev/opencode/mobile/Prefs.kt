@@ -27,6 +27,7 @@ object Prefs {
     private const val KEY_ROOTFS_STAMP = "rootfs_stamp"
     private const val KEY_ROOTFS_STATUS = "rootfs_status"
     private const val KEY_ROOTFS_CHECKS = "rootfs_checks"
+    private const val KEY_RUNTIME_CONSENT = "runtime_consent"
 
     fun init(context: Context) {
         if (::prefs.isInitialized) return
@@ -129,6 +130,17 @@ object Prefs {
     var rootfsChecks: String
         get() = prefs.getString(KEY_ROOTFS_CHECKS, "not run") ?: "not run"
         set(v) = prefs.edit().putString(KEY_ROOTFS_CHECKS, v).apply()
+
+    /**
+     * Whether the user has agreed to download the ~240 MB backend binary.
+     *
+     * "unset" until they are asked, then "granted" or "declined". Declining is
+     * not permanent: the gate comes back on the next launch so the choice can be
+     * reversed without reinstalling.
+     */
+    var runtimeConsent: String
+        get() = prefs.getString(KEY_RUNTIME_CONSENT, "unset") ?: "unset"
+        set(v) = prefs.edit().putString(KEY_RUNTIME_CONSENT, v).apply()
 
     var lastUpdateCheck: Long
         get() = prefs.getLong(KEY_LAST_UPDATE_CHECK, 0L)

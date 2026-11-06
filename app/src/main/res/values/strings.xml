@@ -77,4 +77,21 @@
     <string name="workspace_label">Project folder: %1$s</string>
     <string name="copy_diagnostics">Copy diagnostics</string>
     <string name="diagnostics_copied">Diagnostics copied — paste it wherever you are reporting the issue</string>
+
+    <!-- Runtime gate: the backend binary is fetched on first launch instead of
+         being carried in the APK. -->
+    <string name="runtime_title">Backend runtime</string>
+    <string name="runtime_body">The OpenCode server is downloaded rather than packed into the app, which keeps app updates small. It is fetched once and only re-downloaded when it actually changes.</string>
+    <string name="runtime_verifying">Checking the runtime already on disk…</string>
+    <string name="runtime_download">Download runtime</string>
+    <string name="runtime_later">Not now</string>
+    <string name="runtime_checking">Checking the runtime manifest…</string>
+    <string name="runtime_ready">Ready to download: %1$s</string>
+    <string name="runtime_update">A newer backend runtime is available: %1$s</string>
+    <string name="runtime_download_update">Download update</string>
+    <string name="runtime_progress">%1$s of %2$s · %3$d%%</string>
+    <string name="runtime_done">Installed — starting the backend…</string>
+    <string name="runtime_failed">Download failed: %1$s</string>
+    <string name="runtime_no_manifest">Could not reach the runtime manifest. Check the connection, then retry.</string>
+    <string name="runtime_dismissed">No runtime installed, so the backend cannot start. Download it from this screen whenever you are ready.</string>
 </resources>

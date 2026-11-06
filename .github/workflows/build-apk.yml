@@ -3,14 +3,10 @@ name: Build APK
 on:
   workflow_dispatch:
     inputs:
-      opencode_version:
-        description: "opencode CLI version to bundle (ignored if fork_binary_url is set)"
+      runtime_manifest:
+        description: "Runtime manifest the app should read (sha256 + download URL for the backend binary)."
         required: false
-        default: "2.2.5"
-      fork_binary_url:
-        description: "Direct URL to a fork-built linux-arm64-musl opencode binary (with UpstreamSync). Leave empty for stock npm build."
-        required: false
-        default: "https://github.com/Hann1bal/opencode-mesh/releases/download/fork-sync-dev/opencode"
+        default: "https://github.com/Hann1bal/opencode-mesh/releases/download/fork-sync-dev/runtime.json"
   push:
     tags:
       - "v*"
@@ -22,9 +18,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      # Rolling release asset from the fork's fork-build workflow. Contains the
-      # UpstreamSync module; the stock npm binary does not.
-      FORK_BINARY_URL: https://github.com/Hann1bal/opencode-mesh/releases/download/fork-sync-dev/opencode
+      # Rolling release asset from the fork's fork-build workflow. Carries the
+      # UpstreamSync module; the stock npm binary does not. The app reads this
+      # at runtime instead of shipping the binary inside the APK.
+      RUNTIME_MANIFEST: ${{ github.event.inputs.runtime_manifest || 'https://github.com/Hann1bal/opencode-mesh/releases/download/fork-sync-dev/runtime.json' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,33 +41,36 @@ jobs:
           gradle-version: "8.11.1"
 
       - name: Prepare backend assets
-        env:
-          OPENCODE_VERSION: ${{ github.event.inputs.opencode_version || '2.2.5' }}
-          # github.event.inputs is only populated for workflow_dispatch. On a tag
-          # push it is empty, which used to silently fall through to the stock npm
-          # binary — an APK with no UpstreamSync. Default to the fork instead.
-          OPENCODE_BINARY_URL: ${{ github.event.inputs.fork_binary_url || env.FORK_BINARY_URL }}
         run: bash scripts/prepare-assets.sh
 
-      # A silent fallback to the stock binary produces an APK that installs and
-      # runs but cannot sync, so assert the bundled file really is the fork build.
-      - name: Verify bundled backend is the fork build
+      # The backend is downloaded at runtime now, so the old "is the bundled
+      # file the fork build" check no longer applies. What still matters is
+      # where the manifest points: one aimed at the stock npm binary would
+      # install cleanly and silently lack UpstreamSync.
+      - name: Verify the runtime source is the fork
         run: |
-          BUNDLED=app/src/main/assets/runtime/opencode
-          BUNDLED_SIZE=$(stat -c%s "$BUNDLED")
-          FORK_SIZE=$(curl -sIL "$FORK_BINARY_URL" | tr -d '\r' \
-            | awk 'tolower($1)=="content-length:" {v=$2} END {print v}')
-          echo "bundled=$BUNDLED_SIZE fork=$FORK_SIZE"
-          if [ -z "$FORK_SIZE" ]; then
-            echo "::error::Could not read the fork binary size from $FORK_BINARY_URL"
+          if [ -f app/src/main/assets/runtime/opencode ]; then
+            echo "::error::The backend is bundled into assets/runtime again."
+            echo "::error::It must be downloaded at runtime or every update costs 324 MB."
             exit 1
           fi
-          if [ "$BUNDLED_SIZE" != "$FORK_SIZE" ]; then
-            echo "::error::Bundled backend is $BUNDLED_SIZE bytes but the fork binary is $FORK_SIZE."
-            echo "::error::That is the stock npm build: live session sharing would be missing."
+          BODY="$(curl -fsSL "$RUNTIME_MANIFEST")"
+          URL="$(printf '%s' "$BODY" | sed -n 's/.*"url": "\([^"]*\)".*/\1/p')"
+          SHA="$(printf '%s' "$BODY" | sed -n 's/.*"sha256": "\([^"]*\)".*/\1/p')"
+          echo "manifest url=$URL"
+          echo "manifest sha256=$SHA"
+          case "$URL" in
+            *Hann1bal/opencode-mesh*) ;;
+            *)
+              echo "::error::Runtime manifest does not point at the fork: $URL"
+              exit 1
+              ;;
+          esac
+          if [ "${#SHA}" -ne 64 ]; then
+            echo "::error::Runtime manifest sha256 is not a sha256: '$SHA'"
             exit 1
           fi
-          echo "OK: bundled backend matches the fork binary ($FORK_SIZE bytes)"
+          echo "OK: runtime is fetched from the fork build"
 
       - name: Decode keystore (if provided)
         if: ${{ env.KEYSTORE_BASE64 != '' }}
@@ -113,6 +113,21 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           fi
           exit "$code"
+
+      # The whole point of moving the backend out of the APK is a small update.
+      # If anything re-bundles it, fail here instead of shipping 324 MB again
+      # and finding out from the download.
+      - name: Check APK size
+        run: |
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -n1)
+          SIZE=$(stat -c%s "$APK")
+          MB=$(( SIZE / 1048576 ))
+          echo "APK: $APK = $MB MB"
+          if [ "$MB" -gt 150 ]; then
+            echo "::error::APK is $MB MB — the backend must not be bundled."
+            exit 1
+          fi
+          echo "OK: $MB MB"
 
       # The job summary is React-rendered and not anonymously fetchable, so push the
       # raw log to a rolling prerelease asset: a plain URL, downloadable without auth.
