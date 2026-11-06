@@ -533,7 +533,11 @@ object RootfsExtractor {
      * different problem from a program choosing to fail.
      */
     private fun describeExit(code: Int): String {
-        if (code < 128) return "exit=$code"
+        // A shell reports a signal death as 128+N where N is a signal number, so
+        // the range is 129..192. Anything above that is a real exit code: ssh
+        // exits 255 on its own errors, and reading that as "signal 127" sends
+        // you looking for a kill that never happened.
+        if (code <= 128 || code > 192) return "exit=$code"
         val name = when (code - 128) {
             6 -> "SIGABRT"
             9 -> "SIGKILL"
