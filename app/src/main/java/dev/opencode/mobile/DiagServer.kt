@@ -4,8 +4,10 @@ import android.content.Context
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
+import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.ServerSocket
+import java.net.URI
 import java.net.Socket
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -153,6 +155,12 @@ object DiagServer {
                     // State of the DevTools bridge: the abstract socket name,
                     // the TCP port, and how many tunnels are live.
                     path == "/diag/cdp" -> reply(s, 200, CdpForwarder.status() + "\n")
+                    // A freshly minted pairing link for every address this device
+                    // answers on. Minting here rather than hand-writing a link is
+                    // the point: the code is single-use and lives five minutes, so
+                    // anything typed out by hand and carried over is stale by the
+                    // time someone tries it, and the failure blames the link.
+                    path == "/diag/pairlink" -> reply(s, 200, pairLink())
                     path.startsWith("/diag/exec") -> {
                         val len = headers["content-length"]?.toIntOrNull() ?: 0
                         val cmd = String(readExact(input, len), Charsets.UTF_8).trim()
@@ -168,6 +176,77 @@ object DiagServer {
         } catch (_: Exception) {
             // A client that hangs up mid-request is not worth losing the listener over.
         }
+    }
+
+    /**
+     * Mints a pairing code against the local backend and renders one link per
+     * address this device is reachable at.
+     *
+     * Loopback is sorted last on purpose. It does work when the link is used on
+     * this device, but a loopback link handed to another machine points at that
+     * machine's own loopback, which is how a perfectly valid pairing reads as
+     * "не робит". The addresses that actually mean something across a network
+     * come first.
+     */
+    private fun pairLink(): String {
+        val port = BackendManager.port
+        if (port <= 0) return "backend is not running: no port has been assigned yet\n"
+        val auth = "Basic " + android.util.Base64.encodeToString(
+            ("opencode:" + Prefs.backendToken).toByteArray(Charsets.UTF_8),
+            android.util.Base64.NO_WRAP,
+        )
+
+        val minted = try {
+            val body = http("POST", "http://127.0.0.1:$port/api/pair", auth)
+            org.json.JSONObject(body)
+        } catch (e: Exception) {
+            return "could not mint a code against 127.0.0.1:$port: " +
+                "${e.javaClass.simpleName}: ${e.message}\n"
+        }
+        val code = minted.optString("code")
+        if (code.isEmpty()) {
+            return "the backend returned no code: ${minted.toString().take(240)}\n"
+        }
+        val ttl = minted.optInt("expires_in", 300)
+
+        val advertised = try {
+            val info = org.json.JSONObject(http("GET", "http://127.0.0.1:$port/api/info", auth))
+            val arr = info.optJSONArray("urls")
+            (0 until (arr?.length() ?: 0)).map { arr!!.getString(it) }
+        } catch (e: Exception) {
+            emptyList()
+        }
+
+        val bases = (advertised + "http://127.0.0.1:$port").distinct()
+            .sortedBy { it.contains("127.0.0.1") }
+
+        val sb = StringBuilder()
+        sb.append("pairing code: $code   (single use, expires in ${ttl}s)\n\n")
+        for (base in bases) sb.append("$base/auth/connect/$code\n")
+        sb.append("\nUse a non-loopback line for anything outside this device.\n")
+        sb.append("The code dies with the backend process: it is cached in memory, not on disk.\n")
+        return sb.toString()
+    }
+
+    private fun http(method: String, url: String, auth: String): String {
+        val conn = URI(url).toURL().openConnection() as HttpURLConnection
+        conn.requestMethod = method
+        conn.connectTimeout = 8_000
+        conn.readTimeout = 8_000
+        conn.setRequestProperty("Accept", "application/json")
+        conn.setRequestProperty("Authorization", auth)
+        if (method == "POST") {
+            conn.doOutput = true
+            conn.outputStream.use { it.write(ByteArray(0)) }
+        }
+        val status = conn.responseCode
+        val body = (if (status in 200..299) conn.inputStream else conn.errorStream)
+            ?.bufferedReader()?.readText().orEmpty()
+        conn.disconnect()
+        if (status !in 200..299) {
+            throw IllegalStateException("HTTP $status from $url: ${body.take(200)}")
+        }
+        return body
     }
 
     private fun exec(ctx: Context, cmd: String, socket: Socket) {
