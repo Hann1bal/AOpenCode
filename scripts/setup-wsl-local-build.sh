@@ -31,6 +31,26 @@ CMDLINE_TOOLS_ZIP="https://dl.google.com/android/repository/commandlinetools-lin
 log() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 die() { printf '\033[31mERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 
+# --- 0. Preflight: is there actually a network? -----------------------------
+# Without this the script hangs for minutes inside apt, printing nothing but
+# "Temporary failure resolving", which reads like a slow download rather than
+# the dead path it is. A VPN with a split-tunnel driver is the usual cause: it
+# proxies the Windows host's own traffic, so Windows looks fine, but drops the
+# forwarded packets WSL's NAT produces, so WSL has no route out at all.
+log "preflight: outbound connectivity from WSL"
+preflight_fail() {
+    printf '\033[31mERROR: WSL has no outbound network.\033[0m\n' >&2
+    printf '  tested: TCP 1.1.1.1:443 and DNS for dl.google.com\n' >&2
+    printf '  Windows itself being online does not rule this out.\n' >&2
+    printf '  Most likely a VPN split-tunnel driver (Amnezia, Radmin, OpenVPN)\n' >&2
+    printf '  is the lowest-metric default route and drops forwarded traffic.\n' >&2
+    printf '  Disconnect the VPN, or raise its interface metric, then rerun.\n' >&2
+    exit 1
+}
+timeout 12 bash -c '</dev/tcp/1.1.1.1/443' 2>/dev/null || preflight_fail
+getent hosts dl.google.com >/dev/null 2>&1 || preflight_fail
+echo "    TCP and DNS both reachable"
+
 sudo_run() {
     [ -n "${SUDO_PASSWORD:-}" ] || die "SUDO_PASSWORD is not set"
     printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' "$@"
@@ -51,8 +71,14 @@ if [ ! -x "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
     TMP="$(mktemp -d)"
     curl -fL "$CMDLINE_TOOLS_ZIP" -o "$TMP/cmdline.zip" || die "cmdline-tools download failed"
     unzip -q "$TMP/cmdline.zip" -d "$TMP/x" || die "cmdline-tools unzip failed"
-    # The archive unpacks to cmdline-tools/bin; sdkmanager wants it under `latest/`.
-    mv "$TMP/cmdline-tools" "$SDK_ROOT/cmdline-tools/latest"
+    # sdkmanager must end up at <sdk>/cmdline-tools/latest/bin/sdkmanager. Locate
+    # the extracted dir by name rather than assuming the archive layout: an
+    # earlier version extracted into $TMP/x and then moved from $TMP, which is a
+    # path that never existed.
+    SRC_DIR="$(find "$TMP/x" -maxdepth 3 -type d -name cmdline-tools | head -1)"
+    [ -n "$SRC_DIR" ] || die "no cmdline-tools directory found inside the archive"
+    mkdir -p "$SDK_ROOT/cmdline-tools"
+    mv "$SRC_DIR" "$SDK_ROOT/cmdline-tools/latest" || die "could not move cmdline-tools into place"
     rm -rf "$TMP"
 fi
 SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
@@ -91,13 +117,15 @@ grep -q 'bashrc.d/aopencode.sh' "$HOME/.bashrc" 2>/dev/null || \
     printf '\n[ -f "$HOME/.bashrc.d/aopencode.sh" ] && . "$HOME/.bashrc.d/aopencode.sh"\n' >> "$HOME/.bashrc"
 
 # --- 5. Verify -----------------------------------------------------------
+# Source the env file directly. `bash -lc` is a login shell and does not read
+# ~/.bashrc, which made an earlier version of this check report every tool as
+# missing even though the install had succeeded.
 log "verification"
-bash -lc '
-    echo "java:    $(java -version 2>&1 | head -1)"
-    echo "gradle:  $(gradle --version 2>/dev/null | awk "/^Gradle /{print \$2; exit}")"
-    echo "SDK:     $ANDROID_HOME"
-    echo "platforms:   $(ls "$ANDROID_HOME/platforms" 2>/dev/null | tr "\n" " ")"
-    echo "build-tools: $(ls "$ANDROID_HOME/build-tools" 2>/dev/null | tr "\n" " ")"
-    echo "adb:     $(adb version 2>&1 | head -1)"
-'
+. "$HOME/.bashrc.d/aopencode.sh"
+echo "java:        $(java -version 2>&1 | head -1)"
+echo "gradle:      $(gradle --version 2>/dev/null | awk '/^Gradle /{print $2; exit}')"
+echo "SDK:         $ANDROID_HOME"
+echo "platforms:   $(ls "$ANDROID_HOME/platforms" 2>/dev/null | tr '\n' ' ')"
+echo "build-tools: $(ls "$ANDROID_HOME/build-tools" 2>/dev/null | tr '\n' ' ')"
+echo "adb:         $(adb version 2>&1 | head -1)"
 log "done"
