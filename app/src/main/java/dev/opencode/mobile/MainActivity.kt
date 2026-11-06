@@ -17,6 +17,9 @@ import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import androidx.webkit.ServiceWorkerCompat
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewFeature
 import dev.opencode.mobile.databinding.ActivityMainBinding
 import dev.opencode.mobile.sync.PeerStore
 import kotlinx.coroutines.Dispatchers
@@ -101,6 +104,19 @@ class MainActivity : AppCompatActivity() {
             // perfectly well. Everything here comes off loopback, so skipping
             // the cache costs nothing worth mentioning.
             cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
+            // The bundled SPA registers a Workbox worker whose navigateFallback
+            // answers navigations from its own precache. While a service worker
+            // owns a request the WebView never calls shouldInterceptRequest, so
+            // the document that reaches the page is the unpatched one and the
+            // shim cannot be installed no matter what we do to the response.
+            // Purging the on-disk registration only helps for the single load
+            // before the SPA registers again; disabling the feature outright is
+            // what keeps every load on our path.
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_DISABLE)) {
+                WebSettingsCompat.setServiceWorkerMode(
+                    this, ServiceWorkerCompat.SERVICE_WORKER_MODE_DISABLE,
+                )
+            }
             mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
             mediaPlaybackRequiresUserGesture = true
         }
