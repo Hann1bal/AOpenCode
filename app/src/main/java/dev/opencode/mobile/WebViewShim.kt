@@ -12,11 +12,13 @@ import java.security.MessageDigest
 
 /**
  * The bundled web UI targets desktop Chrome and uses APIs that Android System WebView
- * only gained recently — `URL.canParse` is Chrome 120, `Array.prototype.toSorted`
- * is 110, `Object.groupBy` is 117. On an older WebView these are plain `TypeError`s
- * that take down the SPA: `URL.canParse` inside `ServerConnection.local()` breaks
- * server registration, which leaves the server list empty and renders the
- * "connect to server" screen even though the backend is healthy and paired.
+ * only gained recently — `URL.canParse` is Chrome 120, static `URL.parse` is 126,
+ * `AbortSignal.any` is 116, `Array.prototype.toSorted` is 110, `Object.groupBy`
+ * is 117. On an older WebView these are plain `TypeError`s that take down the SPA:
+ * `URL.canParse` inside `ServerConnection.local()` breaks server registration,
+ * which leaves the server list empty and renders the "connect to server" screen
+ * even though the backend is healthy and paired, and `URL.parse` in the pairing
+ * dialog kills the submit before the request is sent.
  *
  * Patching the fork is the wrong tool here — the call sites are scattered across
  * dozens of files and more will appear with every upstream update. Instead the shim
@@ -50,7 +52,8 @@ object WebViewShim {
     fun verify(webView: android.webkit.WebView) {
         try {
             webView.evaluateJavascript(
-                "(window.__ocShimInstalled===true)+'/'+(typeof URL.canParse)",
+                "(window.__ocShimInstalled===true)+'/'+(typeof URL.canParse)" +
+                    "+'/'+(typeof URL.parse)",
             ) { value -> installedState = value ?: "no response" }
         } catch (e: Exception) {
             installedState = "verify failed: ${e.javaClass.simpleName}"
@@ -375,6 +378,20 @@ object WebViewShim {
         return true;
       } catch (e) {
         return false;
+      }
+    });
+
+    // Chrome 126. This is the static parse, not the constructor: it returns a
+    // URL or null instead of throwing. The servers dialog in settings runs it on
+    // whatever was typed into the pairing field, so on this WebView the dialog
+    // dies with "URL.parse is not a function" before the pairing request is
+    // ever sent -- which reads as the link being rejected when nothing was
+    // actually attempted.
+    define(URL, 'parse', function parse(input, base) {
+      try {
+        return new URL(input, base);
+      } catch (e) {
+        return null;
       }
     });
   }
