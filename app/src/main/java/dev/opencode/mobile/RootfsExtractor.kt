@@ -64,7 +64,22 @@ object RootfsExtractor {
      * unaffected: it goes through libcurl, which does not ask for a passwd
      * entry.
      */
-    private val KNOWN_LIMITATIONS = setOf("ssh")
+    private val KNOWN_LIMITATIONS = setOf("ssh", "busybox")
+
+    /**
+     * Names that must resolve to a working shell regardless of what the tree
+     * links them to.
+     *
+     * `bin/sh` is a link to busybox's ash, and ash is killed by the ROM's
+     * seccomp filter before it reaches a single builtin: `sh -c 'echo ok'`
+     * dies with SIGSYS while bash, perl and python — same loader, same musl,
+     * same PIE layout — all start fine. The blocked syscall is inside ash
+     * itself, so there is nothing in the tree to repair.
+     *
+     * `sh` is the name scripts and tools ask for, so it gets bash, which is
+     * verified working here and POSIX-compatible for the job.
+     */
+    private val FORCED_SHELL = setOf("sh", "ash")
 
     /** Where scripts with shebangs live in an Alpine tree. */
     private val SHEBANG_DIRS = listOf("bin", "usr/bin", "usr/sbin", "sbin", "usr/libexec")
@@ -78,7 +93,11 @@ object RootfsExtractor {
         // The whole chain in one command: wrapper -> env -> PATH lookup -> bash.
         "env+bash" to arrayOf("env", "bash", "-c", "echo ok"),
         "coreutils" to arrayOf("cat", "/dev/null"),
-        "busybox" to arrayOf("sh", "-c", "echo ok"),
+        // `sh` now resolves to bash; the check proves the shell the agent gets
+        // actually starts. busybox is tested on its own binary so a working `sh`
+        // cannot mask a dead ash.
+        "sh" to arrayOf("sh", "-c", "echo ok"),
+        "busybox" to arrayOf("busybox", "echo", "ok"),
         "git" to arrayOf("git", "--version"),
         "python3" to arrayOf("python3", "--version"),
         "curl" to arrayOf("curl", "--version"),
@@ -283,9 +302,13 @@ object RootfsExtractor {
             // form for busybox — does not work for GNU coreutils, which ignores
             // it and dies on its own usage message. That was the
             // "Try '/…/coreutils --help'" failure.
-            val program =
-                if (real.name in MULTICALL && entry.name != real.name) entry.absolutePath
-                else real.absolutePath
+            val program = when {
+                // See FORCED_SHELL: ash cannot start under this seccomp policy.
+                entry.name in FORCED_SHELL && File(root, "bin/bash").isFile ->
+                    File(root, "bin/bash").absolutePath
+                real.name in MULTICALL && entry.name != real.name -> entry.absolutePath
+                else -> real.absolutePath
+            }
             putWrapper(
                 File(bin, entry.name),
                 "#!/system/bin/sh\n" +
