@@ -204,13 +204,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupRefreshAndError() {
-        // Without this SwipeRefreshLayout assumes its child cannot scroll up and
-        // steals every downward drag, so scrolling a long session back through
-        // history keeps firing a full reload. The WebView knows its own scroll
-        // position; a refresh is only intended from the very top.
-        binding.swipeRefresh.setOnChildScrollUpCallback { _, _ ->
-            binding.webView.scrollY > 0
-        }
+        // Pull-to-refresh is disabled outright. The scroll-up guard cannot work
+        // here: this SPA scrolls an inner `overflow-y: auto` container, not the
+        // document, so the WebView's own scrollY stays 0 no matter how far the
+        // conversation has been scrolled. The guard therefore always answered
+        // "child cannot scroll up", SwipeRefreshLayout took over every downward
+        // drag, and reading back through a long session fired a reload on each
+        // gesture. There is no threshold that fixes a signal that is wrong at
+        // every offset, so the gesture goes.
+        //
+        // Nothing is lost that matters: the page loads on open, the error
+        // overlay has its own retry, and a stale view is one tap from the mode
+        // chip away.
+        binding.swipeRefresh.isEnabled = false
         binding.swipeRefresh.setOnRefreshListener {
             lifecycleScope.launch {
                 // A probe is a socket connect: off the main thread, or it throws

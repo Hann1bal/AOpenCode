@@ -359,6 +359,38 @@ object WebViewShim {
     });
   }
 
+  // Take away the service worker, not just the one on disk.
+  //
+  // A controlling worker answers navigations from its own precache and the
+  // WebView never calls shouldInterceptRequest, so the document that comes up
+  // is the unpatched one and canParse is missing again. Purging the worker at
+  // cold start covers the first load only: the SPA registers a fresh one
+  // immediately afterwards, and that one wins every later navigation inside
+  // the session. Removing the ability to register is the only lever that
+  // holds for as long as the page lives, and this runs before any page script.
+  try {
+    var sw = navigator.serviceWorker;
+    if (sw) {
+      Object.defineProperty(sw, 'register', {
+        value: function () {
+          return Promise.reject(new Error('service workers are disabled in this app'));
+        },
+        writable: false,
+        configurable: true
+      });
+      Object.defineProperty(sw, 'getRegistrations', {
+        value: function () { return Promise.resolve([]); },
+        writable: false,
+        configurable: true
+      });
+      Object.defineProperty(sw, 'getRegistration', {
+        value: function () { return Promise.resolve(undefined); },
+        writable: false,
+        configurable: true
+      });
+    }
+  } catch (e) {}
+
   var AP = Array.prototype;
 
   // Chrome 92 / 97
