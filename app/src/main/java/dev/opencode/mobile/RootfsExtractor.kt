@@ -503,6 +503,24 @@ object RootfsExtractor {
      * would, so this exercises wrappers, symlinks, the loader and library
      * resolution together rather than any one of them in isolation.
      */
+    /**
+     * Android kills a process with a signal rather than an exit code, and the raw
+     * number means nothing without the name. 159 is 128+31 — SIGSYS, the seccomp
+     * filter firing on a syscall the ROM does not allow, which is a very
+     * different problem from a program choosing to fail.
+     */
+    private fun describeExit(code: Int): String {
+        if (code < 128) return "exit=$code"
+        val name = when (code - 128) {
+            6 -> "SIGABRT"
+            9 -> "SIGKILL"
+            11 -> "SIGSEGV"
+            31 -> "SIGSYS (seccomp blocked the syscall)"
+            else -> "signal ${code - 128}"
+        }
+        return "exit=$code $name"
+    }
+
     private fun verify(ctx: Context, bin: File): MutableList<String> {
         val failures = mutableListOf<String>()
         val home = BackendManager.homeDir(ctx)
@@ -529,7 +547,7 @@ object RootfsExtractor {
                     "$name=timeout"
                 } else if (proc.exitValue() != 0) {
                     if (name !in KNOWN_LIMITATIONS) failures.add(name)
-                    "$name=exit=${proc.exitValue()} ${output.take(200)}"
+                    "$name=${describeExit(proc.exitValue())} ${output.take(200)}"
                 } else {
                     "$name=ok"
                 }

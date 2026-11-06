@@ -87,7 +87,13 @@ class MainActivity : AppCompatActivity() {
             builtInZoomControls = false
             displayZoomControls = false
             textZoom = 100
-            cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
+            // LOAD_DEFAULT lets the WebView answer the document from its HTTP
+            // cache, and a cached main-frame load never reaches
+            // shouldInterceptRequest — which is the only place the shim can be
+            // installed. That is why inject= read "not run" while the SPA loaded
+            // perfectly well. Everything here comes off loopback, so skipping
+            // the cache costs nothing worth mentioning.
+            cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
             mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
             mediaPlaybackRequiresUserGesture = true
         }
