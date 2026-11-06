@@ -128,11 +128,6 @@ class PeersActivity : AppCompatActivity() {
         Toast.makeText(this, R.string.diag_rotated, Toast.LENGTH_LONG).show()
     }
 
-    private fun restartBackend() {
-        BackendManager.stop()
-        startService(Intent(this, BackendService::class.java).setAction(BackendService.ACTION_WAKE))
-    }
-
     /**
      * CAMERA is a dangerous permission: declaring it in the manifest is not enough.
      * Until it is actually requested, the app does not even appear under

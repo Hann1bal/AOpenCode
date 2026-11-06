@@ -72,6 +72,15 @@ jobs:
           fi
           echo "OK: runtime is fetched from the fork build"
 
+      # Cheap source checks that gradle would also catch, but with an error line
+      # in the annotation list instead of a log behind a sign-in wall. Each of
+      # these corresponds to a build that was actually lost to CI before being
+      # noticed locally.
+      - name: Static source checks
+        run: |
+          python3 scripts/check-kotlin-escapes.py || exit 1
+          python3 scripts/check-duplicate-funs.py || exit 1
+
       - name: Decode keystore (if provided)
         if: ${{ env.KEYSTORE_BASE64 != '' }}
         env:
