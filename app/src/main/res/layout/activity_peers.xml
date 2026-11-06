@@ -1,186 +1,215 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!--
+  Scrollable by necessity. The previous root was a bare LinearLayout, so once
+  the diagnostics block was appended the fixed-height views below the fold
+  were clipped off the bottom of the screen with no way to reach them — the
+  token was present in the tree and invisible in practice.
+
+  peerList and emptyView used to be height=0dp/weight=1. Inside a ScrollView
+  weights have nothing to distribute, so both are wrap_content now and the
+  ListView does not scroll itself; the ScrollView owns the scrolling. That
+  costs item recycling, which is irrelevant at the handful of peers this
+  screen ever holds.
+-->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="?android:attr/colorBackground"
-    android:padding="16dp">
+    android:fillViewport="true">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/peers_title"
-        android:textSize="20sp"
-        android:textStyle="bold" />
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:text="@string/peers_subtitle"
-        android:textSize="13sp" />
-
-    <!-- What the backend is doing right now, so switching is an informed choice. -->
-    <TextView
-        android:id="@+id/modeStatus"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:background="@drawable/bg_mode_chip"
-        android:padding="12dp"
-        android:text="@string/mode_local"
-        android:textColor="#FFFFFFFF"
-        android:textSize="13sp" />
-
-    <!-- First-class exit from mirroring. Without this, going back to the local
-         agent looked like it required deleting the pairing. -->
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/workLocallyButton"
-        style="@style/Widget.Material3.Button.OutlinedButton"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="@string/work_locally"
-        android:visibility="gone" />
-
-    <!-- Huawei/EMUI/HarmonyOS freeze background processes; a foreground service
-         alone does not survive it. Shown only while we are still restricted. -->
     <LinearLayout
-        android:id="@+id/batteryWarning"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:background="@drawable/bg_mode_chip"
         android:orientation="vertical"
-        android:padding="12dp"
-        android:visibility="gone">
+        android:background="?android:attr/colorBackground"
+        android:padding="16dp">
 
         <TextView
-            android:layout_width="match_parent"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/battery_title"
-            android:textColor="#FFFFC9A0"
-            android:textSize="13sp"
+            android:text="@string/peers_title"
+            android:textSize="20sp"
             android:textStyle="bold" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="@string/battery_body"
+            android:text="@string/peers_subtitle"
+            android:textSize="13sp" />
+
+        <!-- What the backend is doing right now, so switching is an informed choice. -->
+        <TextView
+            android:id="@+id/modeStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/bg_mode_chip"
+            android:padding="12dp"
+            android:text="@string/mode_local"
             android:textColor="#FFFFFFFF"
             android:textSize="13sp" />
 
+        <!-- First-class exit from mirroring. Without this, going back to the local
+             agent looked like it required deleting the pairing. -->
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/batteryButton"
+            android:id="@+id/workLocallyButton"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/work_locally"
+            android:visibility="gone" />
+
+        <!-- Huawei/EMUI/HarmonyOS freeze background processes; a foreground service
+             alone does not survive it. Shown only while we are still restricted. -->
+        <LinearLayout
+            android:id="@+id/batteryWarning"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/bg_mode_chip"
+            android:orientation="vertical"
+            android:padding="12dp"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/battery_title"
+                android:textColor="#FFFFC9A0"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/battery_body"
+                android:textColor="#FFFFFFFF"
+                android:textSize="13sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/batteryButton"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/battery_open" />
+        </LinearLayout>
+
+        <ListView
+            android:id="@+id/peerList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:nestedScrollingEnabled="false" />
+
+        <TextView
+            android:id="@+id/emptyView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:gravity="center"
+            android:text="@string/peers_empty"
+            android:textSize="14sp"
+            android:visibility="gone" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/scanButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/peers_scan_qr" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/pasteButton"
             style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="@string/battery_open" />
+            android:text="@string/peers_paste_link" />
+
+        <!-- Which engine the UI runs on. Decides which JS APIs exist, so it is the
+             first thing to look at when the web layer throws a missing-method error. -->
+        <TextView
+            android:id="@+id/engineInfo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:gravity="center"
+            android:textIsSelectable="true"
+            android:textSize="11sp"
+            android:alpha="0.55" />
+
+        <!-- The folder the backend runs in and treats as its project root. On Android
+             nothing a user would guess is writable, so the real path is shown here. -->
+        <TextView
+            android:id="@+id/workspaceInfo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center"
+            android:textIsSelectable="true"
+            android:textSize="11sp"
+            android:alpha="0.55" />
+
+        <!-- A 500 from a live server never reaches the failure overlay, so the log
+             has to be reachable from somewhere else. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/copyDiagnosticsButton"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/copy_diagnostics" />
+
+        <!-- Remote diagnostics. Off by default: turning this on puts an
+             authenticated shell behind a token on the local network, so it is a
+             deliberate switch the user controls rather than a compiled-in flag,
+             and the token is shown instead of being baked into the build. -->
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/diagSwitch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:text="@string/diag_title" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="@string/diag_body"
+            android:textSize="11sp"
+            android:alpha="0.6" />
+
+        <TextView
+            android:id="@+id/diagInfo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="#14000000"
+            android:fontFamily="monospace"
+            android:padding="10dp"
+            android:textIsSelectable="true"
+            android:textSize="11sp" />
+
+        <!-- The token is 64 hex characters. Selecting it by thumb across a line
+             break is unreliable, and it is the one thing on this screen that has
+             to be copied exactly, so copy is a button rather than a gesture. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/diagCopyButton"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/diag_copy" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/diagRotateButton"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/diag_rotate" />
     </LinearLayout>
-
-    <ListView
-        android:id="@+id/peerList"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:layout_marginTop="12dp" />
-
-    <TextView
-        android:id="@+id/emptyView"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:gravity="center"
-        android:text="@string/peers_empty"
-        android:textSize="14sp"
-        android:visibility="gone" />
-
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/scanButton"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:text="@string/peers_scan_qr" />
-
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/pasteButton"
-        style="@style/Widget.Material3.Button.TextButton"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:text="@string/peers_paste_link" />
-
-    <!-- Which engine the UI runs on. Decides which JS APIs exist, so it is the
-         first thing to look at when the web layer throws a missing-method error. -->
-    <TextView
-        android:id="@+id/engineInfo"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
-        android:gravity="center"
-        android:textIsSelectable="true"
-        android:textSize="11sp"
-        android:alpha="0.55" />
-
-    <!-- The folder the backend runs in and treats as its project root. On Android
-         nothing a user would guess is writable, so the real path is shown here. -->
-    <TextView
-        android:id="@+id/workspaceInfo"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:gravity="center"
-        android:textIsSelectable="true"
-        android:textSize="11sp"
-        android:alpha="0.55" />
-
-    <!-- A 500 from a live server never reaches the failure overlay, so the log
-         has to be reachable from somewhere else. -->
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/copyDiagnosticsButton"
-        style="@style/Widget.Material3.Button.TextButton"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:text="@string/copy_diagnostics" />
-
-    <!-- Remote diagnostics. Off by default: turning this on puts an
-         authenticated shell behind a token on the local network, so it is a
-         deliberate switch the user controls rather than a compiled-in flag,
-         and the token is shown instead of being baked into the build. -->
-    <com.google.android.material.switchmaterial.SwitchMaterial
-        android:id="@+id/diagSwitch"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="18dp"
-        android:text="@string/diag_title" />
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
-        android:text="@string/diag_body"
-        android:textSize="11sp"
-        android:alpha="0.6" />
-
-    <TextView
-        android:id="@+id/diagInfo"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:background="#14000000"
-        android:fontFamily="monospace"
-        android:padding="10dp"
-        android:textIsSelectable="true"
-        android:textSize="11sp" />
-
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/diagRotateButton"
-        style="@style/Widget.Material3.Button.TextButton"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:text="@string/diag_rotate" />
-</LinearLayout>
+</ScrollView>

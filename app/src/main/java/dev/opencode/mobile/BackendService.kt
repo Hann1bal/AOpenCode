@@ -23,7 +23,8 @@ import kotlinx.coroutines.withContext
  *  - ACTION_START  → extract (first run) + launch + wait until healthy
  *  - ACTION_IDLE   → app went to background; stop the backend after IDLE_TIMEOUT
  *  - ACTION_WAKE   → app came back; cancel idle timer, ensure backend is up
- *  - ACTION_STOP   → stop immediately
+ *  - ACTION_RESTART→ replace the backend process, keep the service alive
+ *  - ACTION_STOP   → stop immediately and tear the service down
  */
 class BackendService : Service() {
 
@@ -33,6 +34,7 @@ class BackendService : Service() {
         const val ACTION_IDLE = "dev.opencode.mobile.action.IDLE"
         const val ACTION_WAKE = "dev.opencode.mobile.action.WAKE"
         const val ACTION_STOP = "dev.opencode.mobile.action.STOP_BACKEND"
+        const val ACTION_RESTART = "dev.opencode.mobile.action.RESTART_BACKEND"
 
         private const val NOTIF_ID = 101
         /** Keep the backend alive this long after the UI goes away. */
@@ -69,6 +71,12 @@ class BackendService : Service() {
                 idleJob?.cancel()
                 idleJob = null
                 ensureBackend()
+                return START_STICKY
+            }
+            ACTION_RESTART -> {
+                idleJob?.cancel()
+                idleJob = null
+                restartBackendProcess()
                 return START_STICKY
             }
             else -> {
@@ -165,6 +173,21 @@ class BackendService : Service() {
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
+        }
+    }
+
+    /**
+     * Replaces the backend process without tearing the service down.
+     *
+     * Needed by anything that changed a value the serve process reads only at
+     * startup — the bind address, the server password, the upstream env. Going
+     * through ACTION_STOP instead destroys the service, onDestroy() cancels the
+     * scope, and the replacement job dies with it.
+     */
+    private fun restartBackendProcess() {
+        scope.launch {
+            BackendManager.stop()
+            ensureBackend()
         }
     }
 

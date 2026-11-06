@@ -103,5 +103,7 @@
     <string name="diag_token">Token: %1$s</string>
     <string name="diag_port">Diag port: %1$d</string>
     <string name="diag_rotate">New token</string>
+    <string name="diag_copy">Copy token</string>
+    <string name="diag_copied">Token copied</string>
     <string name="diag_rotated">New token is shown above. Restart the backend to apply it.</string>
 </resources>

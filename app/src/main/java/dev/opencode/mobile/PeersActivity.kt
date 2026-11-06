@@ -72,6 +72,7 @@ class PeersActivity : AppCompatActivity() {
 
         binding.diagSwitch.setOnCheckedChangeListener { _, on -> setDiagnosticMode(on) }
         binding.diagRotateButton.setOnClickListener { rotateDiagToken() }
+        binding.diagCopyButton.setOnClickListener { copyDiagToken() }
 
         binding.peerList.setOnItemClickListener { _, _, position, _ ->
             showPeerMenu(peerAt(position))
@@ -126,6 +127,19 @@ class PeersActivity : AppCompatActivity() {
         renderDiag()
         restartBackend()
         Toast.makeText(this, R.string.diag_rotated, Toast.LENGTH_LONG).show()
+    }
+
+    /**
+     * Copies just the token, not the surrounding state lines.
+     *
+     * The token has to arrive byte-exact; copying the whole info block means the
+     * receiver has to trim a label and a port off a 64-character hex string, and
+     * a stray character there reads as a wrong password rather than a bad copy.
+     */
+    private fun copyDiagToken() {
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        cm.setPrimaryClip(ClipData.newPlainText("AOpenCode diagnostic token", Prefs.backendToken))
+        Toast.makeText(this, R.string.diag_copied, Toast.LENGTH_SHORT).show()
     }
 
     /**
@@ -366,13 +380,22 @@ class PeersActivity : AppCompatActivity() {
         }
     }
 
-    /** Re-launch the local backend so it picks up the new upstream env. */
+    /**
+     * Re-launch the local backend so it picks up new env (upstream config, the
+     * diagnostic bind address, a rotated token).
+     *
+     * This must not go through ACTION_STOP. ACTION_STOP ends with stopSelf(), which
+     * destroys the service, and onDestroy() cancels the whole coroutine scope —
+     * so the WAKE that follows had its `start backend` job cancelled mid-flight
+     * and the backend never came up. That is the "Job was cancelled" in the
+     * trace with an empty backend.log: the process was killed before it ran.
+     *
+     * ACTION_RESTART stops the backend process and re-ensures it inside the same
+     * live service, so nothing cancels the restart.
+     */
     private fun restartBackend() {
         startService(
-            Intent(this, BackendService::class.java).setAction(BackendService.ACTION_STOP),
-        )
-        startService(
-            Intent(this, BackendService::class.java).setAction(BackendService.ACTION_WAKE),
+            Intent(this, BackendService::class.java).setAction(BackendService.ACTION_RESTART),
         )
     }
 }
