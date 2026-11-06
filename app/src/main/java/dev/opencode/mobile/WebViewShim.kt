@@ -268,6 +268,12 @@ object WebViewShim {
         return res
     }
 
+    private fun cspHash(body: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(body.toByteArray(Charsets.UTF_8))
+        return "sha256-" + Base64.encodeToString(digest, Base64.NO_WRAP)
+    }
+
     /**
      * base64(SHA-256(SHIM_JS)) — the CSP digest of the inline block.
      *
@@ -276,24 +282,38 @@ object WebViewShim {
      * own theme-preload script, so adding one more listed script weakens nothing:
      * the script it permits is the one we wrote.
      */
-    private val shimHash: String by lazy {
-        val digest = MessageDigest.getInstance("SHA-256")
-            .digest(SHIM_JS.toByteArray(Charsets.UTF_8))
-        "sha256-" + Base64.encodeToString(digest, Base64.NO_WRAP)
+    private val shimHash: String by lazy { cspHash(SHIM_JS) }
+
+    /**
+     * CSP digest of the inline service-worker purge.
+     *
+     * injectShim writes three script tags but only the shim's hash was listed, so
+     * the purge was refused on every single load — the browser hashed the exact
+     * bytes of the unregister block and found nothing matching in script-src.
+     * Both inline blocks are ours, so listing both weakens nothing.
+     */
+    private val unregisterHash: String by lazy {
+        cspHash(UNREGISTER_TAG.removePrefix("<script>").removeSuffix("</script>"))
     }
 
     /**
-     * Adds [shimHash] to `script-src`, leaving every other directive alone.
+     * Adds the app's inline script digests to `script-src`, leaving every other
+     * directive alone.
      *
      * When `script-src` is absent the browser falls back to `default-src`, so a
      * bare hash would be ignored and an explicit directive has to be added
      * instead.
      */
     private fun allowShim(csp: String): String {
+        val needed = listOf(shimHash, unregisterHash)
         val match = Regex("(?i)\\bscript-src\\b[^;]*").find(csp)
-            ?: return "$csp; script-src 'self' '$shimHash'"
-        if (match.value.contains(shimHash)) return csp
-        return csp.replaceRange(match.range, match.value.trimEnd() + " '$shimHash'")
+            ?: return "$csp; script-src 'self' " + needed.joinToString(" ") { "'$it'" }
+        val missing = needed.filterNot { match.value.contains(it) }
+        if (missing.isEmpty()) return csp
+        return csp.replaceRange(
+            match.range,
+            match.value.trimEnd() + " " + missing.joinToString(" ") { "'$it'" },
+        )
     }
 
     private fun basicAuth(): String =
@@ -356,6 +376,34 @@ object WebViewShim {
       } catch (e) {
         return false;
       }
+    });
+  }
+
+  // Chrome 116. The goal plugin calls AbortSignal.any and dies with "is not a
+  // function" on the Chrome 114 WebView that ships on Android 12, which takes
+  // the whole plugin down at load. Semantics: the returned signal aborts as soon
+  // as any input does, carrying that input's reason.
+  if (typeof AbortSignal !== 'undefined' && typeof AbortController !== 'undefined') {
+    define(AbortSignal, 'any', function any(signals) {
+      var controller = new AbortController();
+      var list = Array.prototype.slice.call(signals || []);
+      if (list.length === 0) return controller.signal;
+      var bind = function (source) {
+        return function () {
+          controller.abort(source.reason);
+        };
+      };
+      for (var i = 0; i < list.length; i++) {
+        var source = list[i];
+        if (source && source.aborted) {
+          controller.abort(source.reason);
+          break;
+        }
+        if (source && typeof source.addEventListener === 'function') {
+          source.addEventListener('abort', bind(source), { once: true });
+        }
+      }
+      return controller.signal;
     });
   }
 
