@@ -133,9 +133,17 @@ object DiagServer {
             reply(socket, 503, "no bash wrapper at ${bash.absolutePath}\n")
             return
         }
+        // Output goes to a file, not a pipe. A pipe needs a reader kept in step
+        // with the writer: any grandchild that inherits the descriptor holds it
+        // open past the parent's exit, the reader blocks forever, and the worker
+        // is lost. That leak is what made roughly half of all requests time out,
+        // including trivial ones, which read as a broken runtime. There is no
+        // pipe here, so there is nothing to leak.
+        val outFile = File(ctx.cacheDir, "diag-${System.nanoTime()}.out")
         val proc = try {
             val pb = ProcessBuilder(bash.absolutePath, "-c", cmd)
                 .redirectErrorStream(true)
+                .redirectOutput(outFile)
                 .directory(BackendManager.workspaceDir(ctx))
             BackendManager.applyAgentEnv(ctx, pb.environment())
             pb.start()
@@ -144,37 +152,31 @@ object DiagServer {
             return
         }
 
-        val buf = ByteArrayOutputStream()
-        val drain = Thread {
-            proc.inputStream.use { src ->
-                val chunk = ByteArray(8192)
-                var n = src.read(chunk)
-                while (n > 0) {
-                    // Keep draining past the cap. Stopping reads would fill the
-                    // pipe and wedge the command we are trying to observe.
-                    if (buf.size() < MAX_OUTPUT) buf.write(chunk, 0, n)
-                    n = src.read(chunk)
-                }
-            }
-        }
-        drain.start()
-
         if (!proc.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
             proc.destroyForcibly()
             reply(
                 socket,
                 504,
-                "timed out after ${TIMEOUT_SECONDS}s\n" + String(buf.toByteArray(), Charsets.UTF_8),
+                "timed out after ${TIMEOUT_SECONDS}s\n" + readOut(outFile),
             )
             return
         }
-        drain.join(5000)
         reply(
             socket,
             200,
-            String(buf.toByteArray(), Charsets.UTF_8),
+            readOut(outFile),
             mapOf("X-Exit" to proc.exitValue().toString()),
         )
+    }
+
+    private fun readOut(file: File): String {
+        val text = try {
+            if (file.isFile) String(file.readBytes(), Charsets.UTF_8) else ""
+        } catch (e: Exception) {
+            "(could not read output: ${e.javaClass.simpleName})"
+        }
+        file.delete()
+        return if (text.length > MAX_OUTPUT) text.take(MAX_OUTPUT) + "\n… truncated" else text
     }
 
     private fun authorized(header: String?): Boolean {
