@@ -2,18 +2,22 @@ package dev.opencode.mobile
 
 import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.util.Base64
 import android.view.View
 import android.webkit.HttpAuthHandler
+import android.webkit.PermissionRequest
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -30,6 +34,25 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private var readyJob: Job? = null
+
+    /**
+     * A camera request from web content, parked while the user answers the
+     * runtime permission dialog. A PermissionRequest has to be settled exactly
+     * once, so it is cleared at the moment it is handed over.
+     */
+    private var pendingWebCamera: PermissionRequest? = null
+
+    private val webCameraPermission: ActivityResultLauncher<String> =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            val request = pendingWebCamera
+            pendingWebCamera = null
+            request ?: return@registerForActivityResult
+            if (granted) {
+                request.grant(arrayOf(PermissionRequest.RESOURCE_VIDEO_CAPTURE))
+            } else {
+                request.deny()
+            }
+        }
     private var loadedUrl: String? = null
     private var runtimeManifest: RuntimeInstaller.Manifest? = null
 
@@ -140,6 +163,36 @@ class MainActivity : AppCompatActivity() {
                     consoleMessage.lineNumber(),
                 )
                 return true
+            }
+
+            /**
+             * Web content asking for the camera.
+             *
+             * The inherited implementation denies every request, which is why the
+             * opencode UI's own QR scanner reports a permission error while the
+             * native pairing screen scans fine: that one drives the camera itself
+             * and never crosses the WebView. Only video capture is granted, and
+             * only from the app's own origin - the page is served from the local
+             * backend, so a remote document asking for the camera is refused.
+             */
+            override fun onPermissionRequest(request: PermissionRequest?) {
+                request ?: return
+                val wantsCamera = request.resources
+                    .contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE)
+                val fromLocalBackend = request.origin?.toString()
+                    ?.contains("127.0.0.1:" + BackendManager.port) == true
+                if (!wantsCamera || !fromLocalBackend) {
+                    request.deny()
+                    return
+                }
+                if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.CAMERA) ==
+                    PackageManager.PERMISSION_GRANTED
+                ) {
+                    request.grant(arrayOf(PermissionRequest.RESOURCE_VIDEO_CAPTURE))
+                    return
+                }
+                pendingWebCamera = request
+                webCameraPermission.launch(Manifest.permission.CAMERA)
             }
         }
 
