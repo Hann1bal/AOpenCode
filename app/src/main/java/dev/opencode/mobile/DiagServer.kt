@@ -41,10 +41,14 @@ import java.util.concurrent.atomic.AtomicBoolean
 object DiagServer {
     const val PORT = 4180
     private const val MAX_OUTPUT = 4 * 1024 * 1024
-    private const val TIMEOUT_SECONDS = 180L
+
+    // 60s, not 180. A hung command holds its worker for the whole timeout, and
+    // with a small pool two of them starve every later request -- which reads
+    // on the client as a transport that randomly times out.
+    private const val TIMEOUT_SECONDS = 60L
 
     private val started = AtomicBoolean(false)
-    private val pool = Executors.newFixedThreadPool(2)
+    private val pool = Executors.newFixedThreadPool(8)
 
     @Volatile
     var lastError: String? = null
