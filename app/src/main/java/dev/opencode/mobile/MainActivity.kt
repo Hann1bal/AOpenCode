@@ -87,7 +87,10 @@ class MainActivity : AppCompatActivity() {
         binding.webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
-            databaseEnabled = true
+            // databaseEnabled deliberately dropped. It controlled Web SQL
+            // Database, which has been removed from Chromium/WebView entirely,
+            // so the call is a no-op on every engine this app runs on. The
+            // storage the SPA actually uses is DOM storage, set above.
             allowFileAccess = false
             allowContentAccess = false
             setSupportZoom(false)
