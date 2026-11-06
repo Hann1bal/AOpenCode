@@ -28,6 +28,7 @@ object Prefs {
     private const val KEY_ROOTFS_STATUS = "rootfs_status"
     private const val KEY_ROOTFS_CHECKS = "rootfs_checks"
     private const val KEY_RUNTIME_CONSENT = "runtime_consent"
+    private const val KEY_DIAG_ENABLED = "diag_enabled"
 
     fun init(context: Context) {
         if (::prefs.isInitialized) return
@@ -64,43 +65,56 @@ object Prefs {
         set(v) = prefs.edit().putString(KEY_PROVIDER_NAME, v).apply()
 
     // =====================================================================
-    //  DIAGNOSTIC ACCESS — REMOVE BEFORE ANY RELEASE BUILD
+    //  REMOTE DIAGNOSTICS
     // =====================================================================
     //
-    //  The backend binds 0.0.0.0 so a machine inside the tailnet can walk
-    //  its API directly instead of round-tripping every observation
-    //  through a copy/pasted diagnostics blob. This fixed password is the
-    //  only thing between the network and an authenticated agent.
+    //  Off by default. Turning it on binds the backend to 0.0.0.0 and starts
+    //  the diagnostic exec endpoint so a machine on the same tailnet can
+    //  drive the device directly instead of round-tripping observations
+    //  through a copy/pasted blob.
     //
-    //  Acceptable for a sideload-only dev build on a private tailnet. It
-    //  is NOT acceptable in anything published: a released APK ships this
-    //  exact key to every install, and 0.0.0.0 then means every Wi-Fi
-    //  network the app lands on knows the password too.
+    //  The token is generated per install and shown in the UI rather than
+    //  compiled in. A key baked into the source ships the same secret to every
+    //  install of the APK, which turns one leak into a universal one.
     //
-    //  TO RESTORE RELEASE BEHAVIOUR: set DIAGNOSTIC_MODE to false and
-    //  change the bind back to 127.0.0.1 in BackendManager.start().
-    //  The per-install random path below is what takes over.
+    //  Still: while this is on, the whole device is reachable with a shell to
+    //  anyone who holds the token and can route to it. Treat it as a debug
+    //  switch, not a feature.
     // =====================================================================
-    private const val DIAGNOSTIC_MODE = true
-    private const val DIAGNOSTIC_TOKEN = "fDCTkvnVE7_lYNFhjZnrkA_lySI99RF7Yu5c_gU--rs"
 
     /** Whether the remote diagnostic surface (0.0.0.0 bind, exec endpoint) is live. */
-    val diagnosticMode: Boolean
-        get() = DIAGNOSTIC_MODE
+    var diagnosticMode: Boolean
+        get() = prefs.getBoolean(KEY_DIAG_ENABLED, false)
+        set(v) = prefs.edit().putBoolean(KEY_DIAG_ENABLED, v).apply()
 
     /** Stable per-install random token. Passed to the backend as its server password. */
     val backendToken: String
         get() {
-            if (DIAGNOSTIC_MODE) return DIAGNOSTIC_TOKEN
             var t = prefs.getString(KEY_BACKEND_TOKEN, null)
             if (t.isNullOrEmpty()) {
-                val bytes = ByteArray(32)
-                SecureRandom().nextBytes(bytes)
-                t = bytes.joinToString("") { "%02x".format(it) }
+                t = randomToken()
                 prefs.edit().putString(KEY_BACKEND_TOKEN, t).apply()
             }
             return t
         }
+
+    /**
+     * Replaces the token with a fresh random one.
+     *
+     * The running backend still holds the old credential, so the caller has to
+     * restart it for this to take effect — the UI does that on the user's tap.
+     */
+    fun rotateBackendToken(): String {
+        val t = randomToken()
+        prefs.edit().putString(KEY_BACKEND_TOKEN, t).apply()
+        return t
+    }
+
+    private fun randomToken(): String {
+        val bytes = ByteArray(32)
+        SecureRandom().nextBytes(bytes)
+        return bytes.joinToString("") { "%02x".format(it) }
+    }
 
     var backendPort: Int
         get() = prefs.getInt(KEY_BACKEND_PORT, -1)

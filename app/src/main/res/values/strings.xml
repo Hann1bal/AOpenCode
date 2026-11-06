@@ -94,4 +94,14 @@
     <string name="runtime_failed">Download failed: %1$s</string>
     <string name="runtime_no_manifest">Could not reach the runtime manifest. Check the connection, then retry.</string>
     <string name="runtime_dismissed">No runtime installed, so the backend cannot start. Download it from this screen whenever you are ready.</string>
+
+    <!-- Remote diagnostics -->
+    <string name="diag_title">Remote diagnostics</string>
+    <string name="diag_body">Binds the backend to all interfaces and opens a remote shell endpoint for a machine on the same tailnet. Everything here is reachable with the token below — leave it off unless you are actively debugging.</string>
+    <string name="diag_off">Off. Backend binds 127.0.0.1, no exec endpoint.</string>
+    <string name="diag_on">On. Backend binds 0.0.0.0, exec endpoint live.</string>
+    <string name="diag_token">Token: %1$s</string>
+    <string name="diag_port">Diag port: %1$d</string>
+    <string name="diag_rotate">New token</string>
+    <string name="diag_rotated">New token is shown above. Restart the backend to apply it.</string>
 </resources>

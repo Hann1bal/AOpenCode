@@ -145,4 +145,42 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
         android:text="@string/copy_diagnostics" />
+
+    <!-- Remote diagnostics. Off by default: turning this on puts an
+         authenticated shell behind a token on the local network, so it is a
+         deliberate switch the user controls rather than a compiled-in flag,
+         and the token is shown instead of being baked into the build. -->
+    <com.google.android.material.switchmaterial.SwitchMaterial
+        android:id="@+id/diagSwitch"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="18dp"
+        android:text="@string/diag_title" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:text="@string/diag_body"
+        android:textSize="11sp"
+        android:alpha="0.6" />
+
+    <TextView
+        android:id="@+id/diagInfo"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:background="#14000000"
+        android:fontFamily="monospace"
+        android:padding="10dp"
+        android:textIsSelectable="true"
+        android:textSize="11sp" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/diagRotateButton"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="@string/diag_rotate" />
 </LinearLayout>

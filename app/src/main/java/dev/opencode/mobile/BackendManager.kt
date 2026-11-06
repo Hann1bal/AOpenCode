@@ -23,8 +23,9 @@ import java.util.concurrent.TimeUnit
  *
  * It binds 0.0.0.0 on a random port in 4096..4196 so the tailnet can reach
  * the API for remote diagnostics. The only thing in front of it is Basic auth
- * (`opencode:<token>`); see the DIAGNOSTIC_MODE marker in Prefs before
- * shipping a release build, where this must go back to loopback-only.
+ * (`opencode:<token>`); the token is generated per install and shown in the
+ * diagnostics section of the peers screen. The 0.0.0.0 bind only happens
+ * while the user has remote diagnostics switched on.
  */
 object BackendManager {
     private const val TAG = "BackendManager"
@@ -323,10 +324,11 @@ object BackendManager {
             "--library-path", dir.absolutePath,
             bin.absolutePath,
             "serve",
-            // 0.0.0.0 so the tailnet can reach the API directly. Guarded by
-            // Basic auth and by DIAGNOSTIC_MODE in Prefs — see the removal
-            // marker there before shipping anything.
-            "--hostname", "0.0.0.0",
+            // Loopback unless diagnostics are on. Exposing the authenticated
+            // agent to the whole local network is only ever wanted while a
+            // specific machine needs in, so it is behind the user's switch
+            // rather than the default.
+            "--hostname", if (Prefs.diagnosticMode) "0.0.0.0" else "127.0.0.1",
             "--port", p.toString()
         )
         pb.redirectErrorStream(true)

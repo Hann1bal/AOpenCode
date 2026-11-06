@@ -70,6 +70,9 @@ class PeersActivity : AppCompatActivity() {
 
         binding.copyDiagnosticsButton.setOnClickListener { copyDiagnostics() }
 
+        binding.diagSwitch.setOnCheckedChangeListener { _, on -> setDiagnosticMode(on) }
+        binding.diagRotateButton.setOnClickListener { rotateDiagToken() }
+
         binding.peerList.setOnItemClickListener { _, _, position, _ ->
             showPeerMenu(peerAt(position))
         }
@@ -80,6 +83,54 @@ class PeersActivity : AppCompatActivity() {
         }
 
         render()
+        renderDiag()
+    }
+
+    /**
+     * Shows the live diagnostic state together with the real token.
+     *
+     * The token is displayed rather than compiled in: rotating it is a user
+     * action, and nothing secret ships inside the APK.
+     */
+    private fun renderDiag() {
+        val on = Prefs.diagnosticMode
+        // Cleared before setting, otherwise rendering the switch fires the
+        // listener and restarts the backend on every visit to this screen.
+        binding.diagSwitch.setOnCheckedChangeListener(null)
+        binding.diagSwitch.isChecked = on
+        binding.diagInfo.text = buildString {
+            appendLine(getString(if (on) R.string.diag_on else R.string.diag_off))
+            appendLine(getString(R.string.diag_token, Prefs.backendToken))
+            if (on) append(getString(R.string.diag_port, DiagServer.PORT))
+        }
+        binding.diagSwitch.setOnCheckedChangeListener { _, checked -> setDiagnosticMode(checked) }
+    }
+
+    /**
+     * The bind address is decided when the serve process starts, so flipping
+     * this only means anything once the process is replaced.
+     */
+    private fun setDiagnosticMode(on: Boolean) {
+        Prefs.diagnosticMode = on
+        renderDiag()
+        restartBackend()
+        Toast.makeText(
+            this,
+            if (on) "Diagnostics on — reachable with the token shown" else "Diagnostics off",
+            Toast.LENGTH_LONG,
+        ).show()
+    }
+
+    private fun rotateDiagToken() {
+        Prefs.rotateBackendToken()
+        renderDiag()
+        restartBackend()
+        Toast.makeText(this, R.string.diag_rotated, Toast.LENGTH_LONG).show()
+    }
+
+    private fun restartBackend() {
+        BackendManager.stop()
+        startService(Intent(this, BackendService::class.java).setAction(BackendService.ACTION_WAKE))
     }
 
     /**

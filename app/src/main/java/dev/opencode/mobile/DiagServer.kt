@@ -30,8 +30,11 @@ import java.util.concurrent.atomic.AtomicBoolean
  * [Prefs.diagnosticMode] and on Basic auth with the same token the
  * backend uses.
  *
- * Never ship it. Delete this file and the DIAGNOSTIC_MODE block in Prefs,
- * and put the backend bind back to 127.0.0.1, before any release.
+ * Never enabled by default. The whole surface is behind the user's "Remote
+ * diagnostics" switch, the token is generated per install rather than
+ * compiled in, and with the switch off the backend binds loopback and this
+ * server never starts. Treat the switch as a debug tool: while it is on,
+ * anyone holding the token has a shell on the device.
  *
  * Usage:
  *   curl -u opencode:TOKEN http://DEVICE:4180/diag/ping
