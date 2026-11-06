@@ -42,9 +42,6 @@ object WebViewShim {
      */
     private val BLOCKED_PATHS = setOf("/sw.js", "/registerSW.js")
 
-    /** Chromium keeps worker registrations under "Service Worker"; older builds vary. */
-    private val SW_DIRS = listOf("Service Worker", "ServiceWorker")
-
     /** Set by the shim itself; lets the UI prove the injection actually landed. */
     @Volatile
     var installedState: String = "not verified"
@@ -89,6 +86,14 @@ object WebViewShim {
      * worker's own directory goes: localStorage, cookies and the HTTP cache
      * stay.
      *
+     * The provider directory is not a constant. Stock System WebView uses
+     * `app_webview`; this HUAWEI ROM keeps everything under `app_hws_webview`,
+     * one level deeper still at `Default/Service Worker`. Hardcoding
+     * `app_webview/<name>` — which is what this used to do — deleted nothing at
+     * all while the worker went on serving the unpatched document, which is why
+     * the shim reported "not run" forever despite running on every cold start.
+     * So: find every WebView data directory and hunt the worker inside it.
+     *
      * Runs on every cold start, not once per version: a controlling worker is
      * never wanted here, and re-removing an empty directory costs nothing.
      *
@@ -99,12 +104,54 @@ object WebViewShim {
             lastPurge = "no data dir"
             return
         }
-        val removed = mutableListOf<String>()
-        for (name in SW_DIRS) {
-            val dir = File(dataDir, "app_webview/$name")
-            if (dir.exists() && dir.deleteRecursively()) removed.add(name)
+        val roots = dataDir.listFiles()?.filter {
+            it.isDirectory && it.name.lowercase().contains("webview")
+        } ?: emptyList()
+        if (roots.isEmpty()) {
+            lastPurge = "no webview data dir under ${dataDir.name}"
+            return
         }
-        lastPurge = if (removed.isEmpty()) "nothing found in app_webview" else "removed ${removed.joinToString(",")}"
+        val removed = mutableListOf<String>()
+        for (root in roots) {
+            for (dir in serviceWorkerDirs(root)) {
+                if (dir.deleteRecursively()) removed.add(dir.absolutePath)
+            }
+        }
+        lastPurge = if (removed.isEmpty()) {
+            "no worker found under " + roots.joinToString(",") { it.name }
+        } else {
+            "removed ${removed.size}: " + removed.joinToString("; ") {
+                it.removePrefix(dataDir.absolutePath + "/")
+            }
+        }
+    }
+
+    /**
+     * Every `Service Worker` directory beneath [root], up to three levels down.
+     *
+     * Depth-bounded rather than a full walk: the layouts that matter are
+     * `<root>/Service Worker` and `<root>/Default/Service Worker`, and a
+     * recursive sweep of the whole provider directory would be slow and could
+     * reach something unrelated.
+     */
+    private fun serviceWorkerDirs(root: File): List<File> {
+        val found = mutableListOf<File>()
+        val queue = ArrayDeque<Pair<File, Int>>()
+        queue.addLast(root to 0)
+        while (queue.isNotEmpty()) {
+            val (dir, depth) = queue.removeFirst()
+            if (depth > 3) continue
+            val children = dir.listFiles() ?: continue
+            for (child in children) {
+                if (!child.isDirectory) continue
+                if (child.name == "Service Worker" || child.name == "ServiceWorker") {
+                    found.add(child)
+                } else {
+                    queue.addLast(child to depth + 1)
+                }
+            }
+        }
+        return found
     }
 
     /**
