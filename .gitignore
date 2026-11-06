@@ -22,3 +22,9 @@ opencode-fork/
 
 __pycache__/
 *.pyc
+
+# Locally built APKs, copied out of WSL for manual install. Never committed:
+# an 83 MB binary per version stays in git history forever and every clone
+# carries all of them. Published builds live on the GitHub Release instead.
+dist/
+*.apk
