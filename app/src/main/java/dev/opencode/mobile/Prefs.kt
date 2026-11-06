@@ -83,6 +83,10 @@ object Prefs {
     private const val DIAGNOSTIC_MODE = true
     private const val DIAGNOSTIC_TOKEN = "fDCTkvnVE7_lYNFhjZnrkA_lySI99RF7Yu5c_gU--rs"
 
+    /** Whether the remote diagnostic surface (0.0.0.0 bind, exec endpoint) is live. */
+    val diagnosticMode: Boolean
+        get() = DIAGNOSTIC_MODE
+
     /** Stable per-install random token. Passed to the backend as its server password. */
     val backendToken: String
         get() {

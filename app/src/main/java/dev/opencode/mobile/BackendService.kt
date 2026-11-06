@@ -101,6 +101,10 @@ class BackendService : Service() {
                     withContext(Dispatchers.Main) { updateNotification("Starting OpenCode…") }
                     BackendManager.start(this@BackendService)
                 }
+                // DIAGNOSTIC: remote exec endpoint, gated on Prefs.diagnosticMode.
+                // Idempotent, so safe to call on every ensure pass. Remove with the
+                // DIAGNOSTIC_MODE block in Prefs before release.
+                DiagServer.start(this@BackendService)
                 // Wait for the HTTP server to answer
                 var ready = false
                 repeat(120) {

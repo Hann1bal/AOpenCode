@@ -167,43 +167,18 @@ object BackendManager {
         throw IllegalStateException("No free port in 4096..4196")
     }
 
-    /** Launch the backend. Returns the port it is bound to. */
-    @Synchronized
-    fun start(ctx: Context): Int {
-        if (isRunning() && health()) return port
-        stop()
-        lastError = null
-
+    /**
+     * The environment the agent runs in, written onto [env].
+     *
+     * Lifted out of start() so a diagnostic shell can be launched with the
+     * exact same PATH, HOME, TLS and proxy wiring the agent has. A shell that
+     * differs from the runtime only manufactures failures that are not real —
+     * that is how `npm` came back as ENOENT in a smoke test that worked fine
+     * in the actual backend.
+     */
+    fun applyAgentEnv(ctx: Context, env: MutableMap<String, String>) {
         val dir = runtimeDir(ctx)
-        val loader = File(dir, "ld-musl-aarch64.so.1")
-        val bin = File(dir, "opencode")
-        if (!loader.exists() || !bin.exists()) {
-            val msg = "Backend not extracted: loader=${loader.exists()} bin=${bin.exists()} in ${dir.absolutePath}"
-            lastError = msg
-            throw IllegalStateException(msg)
-        }
-
-        val p = findFreePort()
-        val logFile = File(ctx.cacheDir, "backend.log")
-
-        val pb = ProcessBuilder(
-            loader.absolutePath,
-            "--library-path", dir.absolutePath,
-            bin.absolutePath,
-            "serve",
-            // 0.0.0.0 so the tailnet can reach the API directly. Guarded by
-            // Basic auth and by DIAGNOSTIC_MODE in Prefs — see the removal
-            // marker there before shipping anything.
-            "--hostname", "0.0.0.0",
-            "--port", p.toString()
-        )
-        pb.redirectErrorStream(true)
-        pb.redirectOutput(logFile)
-        // Do not let the server inherit Android's cwd of `/`; see workspaceDir().
-        pb.directory(workspaceDir(ctx))
-
         val home = homeDir(ctx)
-        val env = pb.environment()
         env["HOME"] = home.absolutePath
         env["XDG_CONFIG_HOME"] = File(home, ".config").absolutePath
         env["XDG_DATA_HOME"] = File(File(home, ".local"), "share").absolutePath
@@ -242,7 +217,7 @@ object BackendManager {
         // ssh refuses to run without a readable, writable ~/.ssh.
         File(home, ".ssh").mkdirs()
         // Passed for defense-in-depth; current opencode does not enforce it, but
-        // future versions may. The real protection is loopback-only + random port.
+        // future versions may.
         env["OPENCODE_SERVER_USERNAME"] = "opencode"
         env["OPENCODE_SERVER_PASSWORD"] = Prefs.backendToken
 
@@ -282,6 +257,44 @@ object BackendManager {
             env["OPENCODE_UPSTREAM_TOKEN"] = peer.token
             env["OPENCODE_UPSTREAM_ID"] = peer.id
         }
+    }
+
+    /** Launch the backend. Returns the port it is bound to. */
+    @Synchronized
+    fun start(ctx: Context): Int {
+        if (isRunning() && health()) return port
+        stop()
+        lastError = null
+
+        val dir = runtimeDir(ctx)
+        val loader = File(dir, "ld-musl-aarch64.so.1")
+        val bin = File(dir, "opencode")
+        if (!loader.exists() || !bin.exists()) {
+            val msg = "Backend not extracted: loader=${loader.exists()} bin=${bin.exists()} in ${dir.absolutePath}"
+            lastError = msg
+            throw IllegalStateException(msg)
+        }
+
+        val p = findFreePort()
+        val logFile = File(ctx.cacheDir, "backend.log")
+
+        val pb = ProcessBuilder(
+            loader.absolutePath,
+            "--library-path", dir.absolutePath,
+            bin.absolutePath,
+            "serve",
+            // 0.0.0.0 so the tailnet can reach the API directly. Guarded by
+            // Basic auth and by DIAGNOSTIC_MODE in Prefs — see the removal
+            // marker there before shipping anything.
+            "--hostname", "0.0.0.0",
+            "--port", p.toString()
+        )
+        pb.redirectErrorStream(true)
+        pb.redirectOutput(logFile)
+        // Do not let the server inherit Android's cwd of `/`; see workspaceDir().
+        pb.directory(workspaceDir(ctx))
+
+        applyAgentEnv(ctx, pb.environment())
 
         // Up before the backend: musl resolves to 127.0.0.1:53 by default, and
         // without this every outbound lookup in the agent times out.
@@ -444,6 +457,12 @@ object BackendManager {
         val backendState = if (isRunning()) "running on port $port" else "not running"
         appendLine("backend=$backendState lastProbe=${lastProbe ?: "none"}")
         appendLine("bind=0.0.0.0:$port — reachable from the tailnet at http://<device-ip>:$port")
+        appendLine(
+            if (DiagServer.isRunning)
+                "diag=exec endpoint on :${DiagServer.PORT} lastCall=${DiagServer.lastCall}"
+            else
+                "diag=not running (${DiagServer.lastError ?: "disabled"})",
+        )
         val ws = workspaceDir(ctx)
         appendLine("workspace=${ws.absolutePath} writable=${ws.canWrite()}")
         appendLine("mode=${PeerStore.active()?.let { "following ${it.name}" } ?: "local agent"}")
