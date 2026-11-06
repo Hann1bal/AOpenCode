@@ -132,6 +132,12 @@ object DiagServer {
                     // given, and this is the only place that says what route that
                     // was. Reading it here beats reasoning about the composer.
                     path == "/diag/conns" -> reply(s, 200, HttpConnectProxy.connDump() + "\n")
+                    // The SPA's console, buffered whether or not anyone was
+                    // attached. Read this first for any UI-side failure.
+                    path == "/diag/console" -> reply(s, 200, WebConsole.dump() + "\n")
+                    // State of the DevTools bridge: the abstract socket name,
+                    // the TCP port, and how many tunnels are live.
+                    path == "/diag/cdp" -> reply(s, 200, CdpForwarder.status() + "\n")
                     path.startsWith("/diag/exec") -> {
                         val len = headers["content-length"]?.toIntOrNull() ?: 0
                         val cmd = String(readExact(input, len), Charsets.UTF_8).trim()

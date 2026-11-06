@@ -113,6 +113,36 @@ class MainActivity : AppCompatActivity() {
             mediaPlaybackRequiresUserGesture = true
         }
 
+        // Remote DevTools. Without this call WebView never creates the
+        // webview_devtools_remote_<pid> abstract socket, so there is nothing
+        // for CdpForwarder to bridge and no amount of port forwarding helps.
+        // Gated on the same switch as the forwarder: this exposes arbitrary JS
+        // execution in the app's origin to whatever can reach the port.
+        if (Prefs.diagnosticMode) {
+            @Suppress("SetJavaScriptEnabled")
+            android.webkit.WebView.setWebContentsDebuggingEnabled(true)
+            CdpForwarder.start()
+        }
+
+        // Every console.* from the SPA lands in WebConsole, which keeps a
+        // bounded ring readable over /diag/console. This is the only record of
+        // UI-side failures — before it, a broken tool call inside the page
+        // left no trace anywhere.
+        binding.webView.webChromeClient = object : android.webkit.WebChromeClient() {
+            override fun onConsoleMessage(
+                consoleMessage: android.webkit.ConsoleMessage?
+            ): Boolean {
+                consoleMessage ?: return false
+                WebConsole.add(
+                    consoleMessage.messageLevel().toString(),
+                    consoleMessage.message() ?: "",
+                    consoleMessage.sourceId(),
+                    consoleMessage.lineNumber(),
+                )
+                return true
+            }
+        }
+
         binding.webView.webViewClient = object : WebViewClient() {
 
             override fun onPageFinished(view: WebView?, url: String?) {

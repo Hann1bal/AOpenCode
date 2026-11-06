@@ -455,6 +455,29 @@ object WebViewShim {
     } catch (e) {}
   }
 
+  // Route uncaught JS errors and unhandled promise rejections into the console
+  // so the app's WebChromeClient captures them into WebConsole. Without this a
+  // crash inside the SPA is silent: it never reaches the backend log, and there
+  // is no other record of it. This is what makes a failing tool call inside the
+  // page legible at all.
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    try {
+      window.addEventListener('error', function (e) {
+        var where = (e.filename || '?') + ':' + (e.lineno || 0) + ':' + (e.colno || 0);
+        var detail = e.message || 'unknown error';
+        if (e.error && e.error.stack) {
+          detail += '  <' + String(e.error.stack).split('\n').slice(0, 4).join(' <- ') + '>';
+        }
+        console.error('[window.error] ' + detail + '  @ ' + where);
+      });
+      window.addEventListener('unhandledrejection', function (e) {
+        var r = e.reason;
+        var detail = (r && (r.message || r.stack)) ? String(r.message || r.stack) : String(r);
+        console.error('[unhandledrejection] ' + detail);
+      });
+    } catch (e) {}
+  }
+
   // Marker so the app can confirm the shim actually ran, rather than assuming the
   // interception reached the document.
   if (typeof window !== 'undefined') {
