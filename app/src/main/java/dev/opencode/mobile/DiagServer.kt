@@ -223,8 +223,8 @@ object DiagServer {
         val out = ByteArrayOutputStream(96)
         var c = input.read()
         if (c == -1) return null
-        while (c != -1 && c != '\n') {
-            if (c != '\r') out.write(c)
+        while (c != -1 && c != '\n'.code) {
+            if (c != '\r'.code) out.write(c)
             c = input.read()
         }
         return String(out.toByteArray(), Charsets.UTF_8)
