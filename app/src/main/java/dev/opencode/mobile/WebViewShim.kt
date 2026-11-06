@@ -8,6 +8,7 @@ import java.io.ByteArrayInputStream
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
 
 /**
  * The bundled web UI targets desktop Chrome and uses APIs that Android System WebView
@@ -198,7 +199,12 @@ object WebViewShim {
         lastInject = "patched ${html.length} -> ${patched.length} bytes"
         val headers = HashMap<String, String>()
         headers["Cache-Control"] = "no-cache"
-        if (!csp.isNullOrEmpty()) headers["Content-Security-Policy"] = csp
+        // Propagating the policy verbatim refused our own inline block: this
+        // backend ships script-src without 'unsafe-inline', so the splice was
+        // dead on arrival and only the external tag was left standing. Listing
+        // the shim's digest makes the inline path valid too instead of hoping
+        // one fallback never races the module graph.
+        if (!csp.isNullOrEmpty()) headers["Content-Security-Policy"] = allowShim(csp)
 
         val res = WebResourceResponse(
             "text/html",
@@ -213,6 +219,34 @@ object WebViewShim {
         val res = WebResourceResponse(contentType, "utf-8", ByteArrayInputStream(bytes))
         res.responseHeaders = mapOf("Cache-Control" to "no-cache")
         return res
+    }
+
+    /**
+     * base64(SHA-256(SHIM_JS)) — the CSP digest of the inline block.
+     *
+     * Computed over the exact bytes between `<script>` and `</script>`, which is
+     * what the browser hashes. The app already relies on this mechanism for its
+     * own theme-preload script, so adding one more listed script weakens nothing:
+     * the script it permits is the one we wrote.
+     */
+    private val shimHash: String by lazy {
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(SHIM_JS.toByteArray(Charsets.UTF_8))
+        "sha256-" + Base64.encodeToString(digest, Base64.NO_WRAP)
+    }
+
+    /**
+     * Adds [shimHash] to `script-src`, leaving every other directive alone.
+     *
+     * When `script-src` is absent the browser falls back to `default-src`, so a
+     * bare hash would be ignored and an explicit directive has to be added
+     * instead.
+     */
+    private fun allowShim(csp: String): String {
+        val match = Regex("(?i)\\bscript-src\\b[^;]*").find(csp)
+            ?: return "$csp; script-src 'self' '$shimHash'"
+        if (match.value.contains(shimHash)) return csp
+        return csp.replaceRange(match.range, match.value.trimEnd() + " '$shimHash'")
     }
 
     private fun basicAuth(): String =
