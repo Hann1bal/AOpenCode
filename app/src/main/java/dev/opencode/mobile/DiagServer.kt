@@ -110,6 +110,19 @@ object DiagServer {
                 lastCall = "$method $path"
                 when {
                     path == "/diag/ping" -> reply(s, 200, "ok\n")
+                    // The shim's own report card: whether the patch reached the
+                    // document and whether URL.canParse exists as a function.
+                    // On Chromium 114 a missing canParse throws inside
+                    // ServerConnection.local(), so "true/function" is the only
+                    // value that means the UI is safe. Anything else needs the
+                    // inject reason alongside to tell "not installed" from
+                    // "installed but the call site is uncovered".
+                    path == "/diag/shim" -> reply(
+                        s,
+                        200,
+                        "installed=${WebViewShim.installedState}\n" +
+                            "inject=${WebViewShim.lastInject}\n",
+                    )
                     // The proxy keeps a bounded record of every tunnel: method,
                     // path, upstream host and how it ended. The agent's 404 body
                     // is written by a server that does not have the route it was
