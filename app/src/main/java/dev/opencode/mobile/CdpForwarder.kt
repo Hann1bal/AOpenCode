@@ -70,19 +70,33 @@ object CdpForwarder {
         socketName = "webview_devtools_remote_${android.os.Process.myPid()}"
 
         Thread {
-            try {
-                ServerSocket().use { server ->
-                    server.reuseAddress = true
-                    server.bind(InetSocketAddress("0.0.0.0", PORT))
-                    while (started.get()) {
-                        val tcp = server.accept()
-                        pumpPool.execute { tunnel(tcp) }
+            var backoffSec = 1L
+            while (started.get()) {
+                try {
+                    ServerSocket().use { server ->
+                        server.reuseAddress = true
+                        server.bind(InetSocketAddress("0.0.0.0", PORT))
+                        backoffSec = 1L
+                        while (started.get()) {
+                            val tcp = server.accept()
+                            pumpPool.execute { tunnel(tcp) }
+                        }
                     }
+                } catch (e: Exception) {
+                    if (!started.get()) break
+                    lastError = "${e.javaClass.simpleName}: ${e.message}"
+                    // Same failure mode as DiagServer: one transient accept error
+                    // used to close the DevTools port for good while the app kept
+                    // running, so DevTools could not reattach until a restart.
+                    try {
+                        Thread.sleep(backoffSec * 1000L)
+                    } catch (_: InterruptedException) {
+                        break
+                    }
+                    backoffSec = minOf(backoffSec * 2, 30L)
                 }
-            } catch (e: Exception) {
-                started.set(false)
-                lastError = "${e.javaClass.simpleName}: ${e.message}"
             }
+            started.set(false)
         }.start()
     }
 

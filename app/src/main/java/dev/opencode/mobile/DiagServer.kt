@@ -69,17 +69,32 @@ object DiagServer {
         if (!started.compareAndSet(false, true)) return
         val app = ctx.applicationContext
         Thread {
-            try {
-                ServerSocket(PORT, 8, InetAddress.getByName("0.0.0.0")).use { server ->
-                    while (started.get()) {
-                        val socket = server.accept()
-                        pool.execute { serve(app, socket) }
+            var backoffSec = 1L
+            while (started.get()) {
+                try {
+                    ServerSocket(PORT, 8, InetAddress.getByName("0.0.0.0")).use { server ->
+                        backoffSec = 1L
+                        while (started.get()) {
+                            val socket = server.accept()
+                            pool.execute { serve(app, socket) }
+                        }
                     }
+                } catch (e: Exception) {
+                    if (!started.get()) break
+                    lastError = "${e.javaClass.simpleName}: ${e.message}"
+                    // A transient accept failure used to be terminal: the port went
+                    // quiet for the rest of the process's life while the app looked
+                    // perfectly healthy, which reads from outside as ECONNREFUSED
+                    // with diagnostics switched on. Rebind instead of giving up.
+                    try {
+                        Thread.sleep(backoffSec * 1000L)
+                    } catch (_: InterruptedException) {
+                        break
+                    }
+                    backoffSec = minOf(backoffSec * 2, 30L)
                 }
-            } catch (e: Exception) {
-                started.set(false)
-                lastError = "${e.javaClass.simpleName}: ${e.message}"
             }
+            started.set(false)
         }.start()
     }
 

@@ -1,5 +1,6 @@
 package dev.opencode.mobile.sync
 
+import android.util.Base64
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URI
@@ -38,9 +39,15 @@ object PairingClient {
             throw PairingException("Сервер не выдал токен. Ссылка устарела или уже использована.")
         }
 
-        val info = getJson("$base/api/info")
-        val version = info.optString("version", "")
-        val hostname = info.optString("hostname", base)
+        // /api/info is not public once a server password is set, so it has to carry
+        // the token we just redeemed - unauthenticated it answers 401
+        // UnauthorizedError. Pairing is already complete by then: the credential is
+        // in hand, so losing the informational call must not throw it away. Before
+        // this, a perfectly good pairing died here and the error blamed the code.
+        val info = runCatching { getJson("$base/api/info", token) }.getOrNull()
+        val version = info?.optString("version", "").orEmpty()
+        // hostname is optional in ServerInfo: runtimes without one omit it.
+        val hostname = info?.optString("hostname", "").takeUnless { it.isNullOrEmpty() } ?: base
 
         val peer = Peer(
             id = UUID.randomUUID().toString(),
@@ -85,13 +92,29 @@ object PairingClient {
 
     private fun stripTrailingSlash(s: String) = s.removeSuffix("/")
 
-    private fun getJson(url: String): JSONObject {
+    /**
+     * GETs a JSON body. When [token] is given it is sent as HTTP Basic with the
+     * username the server hardcodes (`opencode`), which is how a pairing session
+     * token is meant to be presented.
+     *
+     * `Accept` stays `application/json` deliberately: the connect route answers a
+     * browser-looking `Accept: text/html` with a 302 and a cookie instead of the
+     * JSON body we need.
+     */
+    private fun getJson(url: String, token: String? = null): JSONObject {
         val conn = URI(url).toURL().openConnection() as HttpURLConnection
         try {
             conn.requestMethod = "GET"
             conn.connectTimeout = 10_000
             conn.readTimeout = 15_000
             conn.setRequestProperty("Accept", "application/json")
+            if (token != null) {
+                val creds = Base64.encodeToString(
+                    ("opencode:" + token).toByteArray(Charsets.UTF_8),
+                    Base64.NO_WRAP,
+                )
+                conn.setRequestProperty("Authorization", "Basic $creds")
+            }
             val code = conn.responseCode
             if (code == 401 || code == 403) {
                 throw PairingException("Сервер отклонил пару (HTTP $code). Проверь, что `opencode pair` запущен и код свежий.")
