@@ -72,7 +72,15 @@ object PairingClient {
             if (code.isEmpty() || urls == null || urls.length() == 0) {
                 throw PairingException("В QR нет code/urls")
             }
-            return stripTrailingSlash(urls.getString(0)) to code
+            // A QR carries every address the server advertises, and it may well be
+            // a screenshot of somebody's terminal. Taking the first entry blindly
+            // can route the pairing through a public relay when a private path
+            // was sitting right there, so order by how far each address reaches
+            // and take the most private one.
+            val ranked = (0 until urls.length())
+                .map { urls.getString(it) }
+                .sortedBy { reachScope(it) }
+            return stripTrailingSlash(ranked.first()) to code
         }
 
         val uri = try {
@@ -91,6 +99,30 @@ object PairingClient {
     }
 
     private fun stripTrailingSlash(s: String) = s.removeSuffix("/")
+
+    private val tailnetV4 = Regex("^100\\.(6[4-9]|[7-9]\\d|1[01]\\d|12[0-7])\\.")
+    private val privateV4 = Regex("^(10\\.|192\\.168\\.|172\\.(1[6-9]|2\\d|3[01])\\.|169\\.254\\.)")
+
+    /**
+     * How far a pairing address reaches; lower is preferred.
+     *
+     * Mirrors the classifier `opencode pair` uses so the two agree on what counts
+     * as public. Loopback ranks above the public internet on purpose: it only
+     * works when the peer is this very device, but at least the traffic never
+     * leaves it, while a tunnel address hands it to a third party.
+     */
+    private fun reachScope(url: String): Int {
+        val host = runCatching { URI(url).host }.getOrNull()
+            ?.trim('[', ']')
+            ?.lowercase()
+            ?: return 3
+        return when {
+            host.startsWith("127.") || host == "localhost" || host == "::1" -> 2
+            tailnetV4.matches(host) || host.startsWith("fd") || host.startsWith("fc") -> 0
+            privateV4.matches(host) || host.endsWith(".local") -> 1
+            else -> 3
+        }
+    }
 
     /**
      * GETs a JSON body. When [token] is given it is sent as HTTP Basic with the
