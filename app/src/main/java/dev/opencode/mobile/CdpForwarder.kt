@@ -105,10 +105,11 @@ object CdpForwarder {
             val toTcp = tcp.getOutputStream()
             val toLocal = local.outputStream
 
-            val a = pumpPool.execute { pipe(toDevtools, toLocal) }
-            val b = pumpPool.execute { pipe(fromDevtools, toTcp) }
+            val a = pumpPool.submit { pipe(toDevtools, toLocal) }
+            val b = pumpPool.submit { pipe(fromDevtools, toTcp) }
             // Block until either direction dies; when one side closes, the whole
-            // tunnel is done.
+            // tunnel is done. submit() rather than execute() because only the
+            // returned Future reports completion.
             var done = false
             while (!done) {
                 Thread.sleep(200)
