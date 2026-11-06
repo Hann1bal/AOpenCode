@@ -21,8 +21,10 @@ import java.util.concurrent.TimeUnit
  *
  *   ld-musl-aarch64.so.1 --library-path <runtimeDir> <runtimeDir>/opencode serve ...
  *
- * It binds to 127.0.0.1 on a random port in 4096..4196 and is never exposed
- * beyond the loopback interface.
+ * It binds 0.0.0.0 on a random port in 4096..4196 so the tailnet can reach
+ * the API for remote diagnostics. The only thing in front of it is Basic auth
+ * (`opencode:<token>`); see the DIAGNOSTIC_MODE marker in Prefs before
+ * shipping a release build, where this must go back to loopback-only.
  */
 object BackendManager {
     private const val TAG = "BackendManager"
@@ -149,16 +151,20 @@ object BackendManager {
 
     fun isRunning(): Boolean = process?.isAlive == true
 
-    /** Find a free TCP port on loopback. */
+    /**
+     * Find a free TCP port. Probed on 0.0.0.0 because that is what the server
+     * binds; testing loopback would call a port free while the real bind fails
+     * on something already holding the wildcard address.
+     */
     private fun findFreePort(): Int {
         for (candidate in 4096..4196) {
             try {
-                ServerSocket(candidate, 50, InetAddress.getByName("127.0.0.1")).use { return it.localPort }
+                ServerSocket(candidate, 50, InetAddress.getByName("0.0.0.0")).use { return it.localPort }
             } catch (_: Exception) {
                 // port busy, try next
             }
         }
-        throw IllegalStateException("No free loopback port in 4096..4196")
+        throw IllegalStateException("No free port in 4096..4196")
     }
 
     /** Launch the backend. Returns the port it is bound to. */
@@ -185,7 +191,10 @@ object BackendManager {
             "--library-path", dir.absolutePath,
             bin.absolutePath,
             "serve",
-            "--hostname", "127.0.0.1",
+            // 0.0.0.0 so the tailnet can reach the API directly. Guarded by
+            // Basic auth and by DIAGNOSTIC_MODE in Prefs — see the removal
+            // marker there before shipping anything.
+            "--hostname", "0.0.0.0",
             "--port", p.toString()
         )
         pb.redirectErrorStream(true)
@@ -434,6 +443,7 @@ object BackendManager {
         )
         val backendState = if (isRunning()) "running on port $port" else "not running"
         appendLine("backend=$backendState lastProbe=${lastProbe ?: "none"}")
+        appendLine("bind=0.0.0.0:$port — reachable from the tailnet at http://<device-ip>:$port")
         val ws = workspaceDir(ctx)
         appendLine("workspace=${ws.absolutePath} writable=${ws.canWrite()}")
         appendLine("mode=${PeerStore.active()?.let { "following ${it.name}" } ?: "local agent"}")
@@ -458,6 +468,10 @@ object BackendManager {
         appendLine("inject=${WebViewShim.lastInject}")
         appendLine("sw=${WebViewShim.lastPurge}")
         appendLine("web.errors=${WebDiagnostics.dump()}")
+        // A subagent failure reaches the screen as a bare "Not Found" that names
+        // nothing. The job record keeps the rendered cause chain, so pulling the
+        // list turns that into an error with a status and a URL.
+        appendLine("jobs=${jobsDump()}")
         // The last steps the process took before it died, newest last. If the app
         // closed without a message, this names the step it was in.
         appendLine("trace=${CrashLog.recentPhases()}")
@@ -495,6 +509,48 @@ object BackendManager {
         } catch (e: Exception) {
             lastProbe = "${e.javaClass.simpleName}: ${e.message}"
             false
+        }
+    }
+
+    /**
+     * Background jobs as the server sees them, newest failure first if there is
+     * one. `GET /api/experimental/job` returns the job records, and an errored
+     * one carries the full cause chain that the UI throws away.
+     */
+    private fun jobsDump(): String {
+        val p = port
+        if (p <= 0) return "backend not running"
+        return try {
+            val conn =
+                URL("http://127.0.0.1:$p/api/experimental/job").openConnection() as HttpURLConnection
+            conn.connectTimeout = 2000
+            conn.readTimeout = 4000
+            conn.requestMethod = "GET"
+            val raw = "opencode:" + Prefs.backendToken
+            conn.setRequestProperty(
+                "Authorization",
+                "Basic " + Base64.encodeToString(raw.toByteArray(), Base64.NO_WRAP),
+            )
+            val code = conn.responseCode
+            if (code != 200) return "HTTP $code"
+            val body = conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+            val data = org.json.JSONObject(body).optJSONArray("data")
+            if (data == null || data.length() == 0) return "none"
+            val out = StringBuilder()
+            for (i in 0 until data.length()) {
+                val job = data.optJSONObject(i) ?: continue
+                if (out.isNotEmpty()) out.append(" ;; ")
+                out.append("${job.optString("type")}=${job.optString("status")}")
+                job.optString("title").takeIf { it.isNotEmpty() }?.let { out.append(" \"$it\"") }
+                // Collapsed onto one line: the cause chain uses newlines as its
+                // "Caused by" separator and the report is line-oriented.
+                job.optString("error").takeIf { it.isNotEmpty() }?.let {
+                    out.append(" err=${it.replace('\n', '|').take(500)}")
+                }
+            }
+            out.toString()
+        } catch (e: Exception) {
+            "${e.javaClass.simpleName}: ${e.message}"
         }
     }
 

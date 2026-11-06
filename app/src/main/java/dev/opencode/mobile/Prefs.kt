@@ -62,9 +62,31 @@ object Prefs {
         get() = prefs.getString(KEY_PROVIDER_NAME, "My Server") ?: "My Server"
         set(v) = prefs.edit().putString(KEY_PROVIDER_NAME, v).apply()
 
+    // =====================================================================
+    //  DIAGNOSTIC ACCESS — REMOVE BEFORE ANY RELEASE BUILD
+    // =====================================================================
+    //
+    //  The backend binds 0.0.0.0 so a machine inside the tailnet can walk
+    //  its API directly instead of round-tripping every observation
+    //  through a copy/pasted diagnostics blob. This fixed password is the
+    //  only thing between the network and an authenticated agent.
+    //
+    //  Acceptable for a sideload-only dev build on a private tailnet. It
+    //  is NOT acceptable in anything published: a released APK ships this
+    //  exact key to every install, and 0.0.0.0 then means every Wi-Fi
+    //  network the app lands on knows the password too.
+    //
+    //  TO RESTORE RELEASE BEHAVIOUR: set DIAGNOSTIC_MODE to false and
+    //  change the bind back to 127.0.0.1 in BackendManager.start().
+    //  The per-install random path below is what takes over.
+    // =====================================================================
+    private const val DIAGNOSTIC_MODE = true
+    private const val DIAGNOSTIC_TOKEN = "fDCTkvnVE7_lYNFhjZnrkA_lySI99RF7Yu5c_gU--rs"
+
     /** Stable per-install random token. Passed to the backend as its server password. */
     val backendToken: String
         get() {
+            if (DIAGNOSTIC_MODE) return DIAGNOSTIC_TOKEN
             var t = prefs.getString(KEY_BACKEND_TOKEN, null)
             if (t.isNullOrEmpty()) {
                 val bytes = ByteArray(32)
