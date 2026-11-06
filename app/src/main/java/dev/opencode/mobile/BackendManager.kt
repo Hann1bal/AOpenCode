@@ -235,9 +235,10 @@ object BackendManager {
         // musl ships no trust store and /etc/ssl does not exist here, so every
         // TLS client in the tree has to be pointed at the bundled bundle by hand.
         val caBundle = File(root, "etc/ssl/certs/ca-certificates.crt")
-        if (caBundle.isFile) {
+        val caDir = caBundle.parentFile
+        if (caBundle.isFile && caDir != null) {
             env["SSL_CERT_FILE"] = caBundle.absolutePath
-            env["SSL_CERT_DIR"] = caBundle.parentFile.absolutePath
+            env["SSL_CERT_DIR"] = caDir.absolutePath
             env["CURL_CA_BUNDLE"] = caBundle.absolutePath
             env["GIT_SSL_CAINFO"] = caBundle.absolutePath
         }

@@ -507,7 +507,9 @@ object RootfsExtractor {
         dirs.add(File(root, "lib"))
         for (base in listOf(File(root, "usr/lib"), File(root, "lib"))) {
             for (f in walk(base, 4)) {
-                if (f.isFile && f.name.endsWith(".so")) dirs.add(f.parentFile)
+                if (!f.isFile || !f.name.endsWith(".so")) continue
+                val parent = f.parentFile ?: continue
+                dirs.add(parent)
             }
         }
         return dirs.toList()
