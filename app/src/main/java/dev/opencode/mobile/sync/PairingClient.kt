@@ -133,6 +133,60 @@ object PairingClient {
      * browser-looking `Accept: text/html` with a 302 and a cookie instead of the
      * JSON body we need.
      */
+    /**
+     * Re-mints a peer's session token without a fresh scan.
+     *
+     * A token is `<unix expiry seconds>.<hmac>` signed with the server password
+     * and lives 30 days. Renewing is the same two calls a pairing makes: POST
+     * /api/pair for a single-use code, then redeem it for a token. Both take the
+     * current token as Basic auth, so no QR or user action is needed while the
+     * old token is still valid -- which is why this has to run before expiry,
+     * not after.
+     *
+     * Returns null when the server will not or cannot re-issue. The caller keeps
+     * the old token, so a failure here is never worse than not trying.
+     */
+    fun renewToken(baseUrl: String, currentToken: String): String? {
+        val code = runCatching {
+            postJson("$baseUrl/api/pair", currentToken).optString("code")
+        }.getOrNull()
+        if (code.isNullOrEmpty()) return null
+        return runCatching { getJson("$baseUrl/auth/connect/$code", currentToken).optString("token") }
+            .getOrNull()
+            ?.takeIf { it.isNotEmpty() }
+    }
+
+    /**
+     * Unix seconds at which a session token stops verifying, from its first
+     * dotted part. Null when the token is not in that shape: an unknown expiry
+     * must not be read as "expired", or every pass would try to renew.
+     */
+    fun tokenExpiryEpochSec(token: String): Long? =
+        token.substringBefore('.', "").toLongOrNull()?.takeIf { it > 0 }
+
+    private fun postJson(url: String, token: String): JSONObject {
+        val conn = URI(url).toURL().openConnection() as HttpURLConnection
+        try {
+            conn.requestMethod = "POST"
+            conn.connectTimeout = 10_000
+            conn.readTimeout = 15_000
+            conn.setRequestProperty("Accept", "application/json")
+            conn.setRequestProperty("Authorization", basicAuth(token))
+            conn.outputStream.use { it.write(ByteArray(0)) }
+            val code = conn.responseCode
+            if (code !in 200..299) throw PairingException("HTTP $code от $url")
+            return JSONObject(conn.inputStream.bufferedReader().readText())
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    private fun basicAuth(token: String): String =
+        "Basic " + Base64.encodeToString(
+            ("opencode:" + token).toByteArray(Charsets.UTF_8),
+            Base64.NO_WRAP,
+        )
+
     private fun getJson(url: String, token: String? = null): JSONObject {
         val conn = URI(url).toURL().openConnection() as HttpURLConnection
         try {

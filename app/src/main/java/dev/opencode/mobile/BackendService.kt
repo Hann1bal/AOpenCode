@@ -81,6 +81,12 @@ class BackendService : Service() {
             }
             else -> {
                 ensureBackend()
+                // Update and pairing-token maintenance. Its own coroutine: a slow
+                // or dead GitHub must not delay the backend coming up, and a
+                // backend failure must not skip the token renewal that keeps a
+                // pairing alive. Throttled to once a day internally, so running
+                // it on every start is cheap.
+                scope.launch { UpdateChecker.checkIfNeeded(this@BackendService) }
                 return START_STICKY
             }
         }

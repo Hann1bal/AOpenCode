@@ -106,4 +106,10 @@
     <string name="diag_copy">Copy token</string>
     <string name="diag_copied">Token copied</string>
     <string name="diag_rotated">New token is shown above. Restart the backend to apply it.</string>
+
+    <!-- Pairing session token lifetime -->
+    <string name="token_renewed_title">Pairing renewed</string>
+    <string name="token_renewed_body">%1$s is good for another 30 days.</string>
+    <string name="token_expiring_title">Pairing about to expire</string>
+    <string name="token_expiring_body">The pairing with %1$s runs out in less than a day and could not be renewed automatically. Re-pair from that machine to keep syncing.</string>
 </resources>

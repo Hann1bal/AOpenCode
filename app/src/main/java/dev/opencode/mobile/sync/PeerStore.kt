@@ -82,6 +82,17 @@ object PeerStore {
         save(all().map { it.copy(active = it.id == id) })
     }
 
+    /**
+     * Swap one peer's session token, keeping everything else about it.
+     *
+     * Identity (id, baseUrl) survives a renewal; only the credential changes.
+     * Matching on id rather than replacing the whole list means a renewal cannot
+     * disturb which peer is active.
+     */
+    fun replaceToken(id: String, token: String) {
+        save(all().map { if (it.id == id) it.copy(token = token) else it })
+    }
+
     fun remove(id: String) {
         save(all().filter { it.id != id })
     }

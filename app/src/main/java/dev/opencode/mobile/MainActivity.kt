@@ -84,6 +84,8 @@ class MainActivity : AppCompatActivity() {
             showRuntimeGate()
         }
 
+        maybeStartApkInstall()
+
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 when {
@@ -442,9 +444,32 @@ class MainActivity : AppCompatActivity() {
 
     private fun megabytes(bytes: Long): String = String.format("%.1f MB", bytes / 1048576.0)
 
+    /**
+     * Starts the in-app APK install when the update notification carried one.
+     *
+     * The extras are cleared immediately: onCreate runs again on rotation and on
+     * a re-resume, and without this the same APK would be downloaded a second
+     * time while the first installer prompt is still on screen.
+     */
+    private fun maybeStartApkInstall() {
+        val url = intent?.getStringExtra(EXTRA_UPDATE_URL) ?: return
+        val tag = intent?.getStringExtra(EXTRA_UPDATE_TAG) ?: "latest"
+        intent?.removeExtra(EXTRA_UPDATE_URL)
+        intent?.removeExtra(EXTRA_UPDATE_TAG)
+        lifecycleScope.launch {
+            UpdateChecker.downloadAndInstall(this@MainActivity, url, tag)
+        }
+    }
+
     companion object {
         /** Opens the runtime gate even when a binary is already installed. */
         const val EXTRA_FORCE_RUNTIME = "force_runtime_update"
+
+        /** Where the release APK lives; set by the update notification. */
+        const val EXTRA_UPDATE_URL = "update_url"
+
+        /** The release tag, used for the downloaded file name and the prompts. */
+        const val EXTRA_UPDATE_TAG = "update_tag"
     }
 
     /**
