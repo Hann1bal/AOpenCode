@@ -48,21 +48,32 @@ object UpdateChecker {
         val now = System.currentTimeMillis()
         if (now - Prefs.lastUpdateCheck < CHECK_INTERVAL_MS) return
         Prefs.lastUpdateCheck = now
+        // Each step gets its own guard. They share nothing but the throttle, and
+        // one shared try meant a throwing token renewal skipped the runtime
+        // check outright -- which is exactly how a device sat on a stale binary
+        // while assets.lock had been naming a newer sha for hours.
         try {
-            // Token renewal runs first and unconditionally. It is the one thing
-            // here with a hard deadline: if the pairing token lapses, the sync
-            // dies and only a fresh QR fixes it. Gating it behind "no APK update
-            // pending" would let a pending update starve it for weeks.
+            // Token renewal runs first. It is the one thing here with a hard
+            // deadline: if the pairing token lapses, the sync dies and only a
+            // fresh QR fixes it.
             renewPeerTokens(context)
+        } catch (_: Exception) {
+            // renewal is best effort; the old token still works until it expires
+        }
+        try {
             val release = withContext(Dispatchers.IO) { fetchLatestRelease(repo) }
             if (release != null && isNewer(release.tag, BuildConfig.VERSION_NAME)) {
                 notifyAvailable(context, release)
                 return
             }
+        } catch (_: Exception) {
+            // an unreachable GitHub must not hide a reachable runtime mirror
+        }
+        try {
             // The backend binary is released on its own schedule, apart from the
-            // APK. It is checked after the APK and skipped while an APK update is
-            // pending: offering a 240 MB runtime download and then immediately
-            // asking for a reinstall of the app would be a bad hour.
+            // APK. It is checked last and skipped while an APK update is pending:
+            // offering a 240 MB runtime download and then immediately asking for
+            // a reinstall of the app would be a bad hour.
             checkRuntime(context)
         } catch (_: Exception) {
             // silent — update checks must never crash the app

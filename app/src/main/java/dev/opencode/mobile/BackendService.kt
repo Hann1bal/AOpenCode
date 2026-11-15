@@ -58,6 +58,14 @@ class BackendService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Update and pairing-token maintenance, started before the dispatch and
+        // not inside any one branch: the common path here is ACTION_WAKE from the
+        // activity, and a check that lived only in the default branch never ran
+        // on a woken service. Its own coroutine, so a slow or dead GitHub cannot
+        // delay the backend coming up. Throttled to once a day internally, so
+        // running it on every start is cheap.
+        scope.launch { UpdateChecker.checkIfNeeded(this@BackendService) }
+
         when (intent?.action) {
             ACTION_STOP -> {
                 stopEverything()
@@ -81,12 +89,6 @@ class BackendService : Service() {
             }
             else -> {
                 ensureBackend()
-                // Update and pairing-token maintenance. Its own coroutine: a slow
-                // or dead GitHub must not delay the backend coming up, and a
-                // backend failure must not skip the token renewal that keeps a
-                // pairing alive. Throttled to once a day internally, so running
-                // it on every start is cheap.
-                scope.launch { UpdateChecker.checkIfNeeded(this@BackendService) }
                 return START_STICKY
             }
         }
