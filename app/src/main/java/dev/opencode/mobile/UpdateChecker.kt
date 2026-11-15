@@ -45,13 +45,15 @@ object UpdateChecker {
     suspend fun checkIfNeeded(context: Context) {
         val repo = BuildConfig.UPDATE_REPO
         if (repo.isBlank()) return
-        val now = System.currentTimeMillis()
-        if (now - Prefs.lastUpdateCheck < CHECK_INTERVAL_MS) return
-        Prefs.lastUpdateCheck = now
+        if (System.currentTimeMillis() - Prefs.lastUpdateCheck < CHECK_INTERVAL_MS) return
+        // The throttle is written at the end, not up front. Setting it before the
+        // work meant a pass that never reached the runtime check still consumed
+        // the day: the device stayed on a stale binary and would not try again
+        // for 24h. Only a pass that got through earns the throttle.
+        var completed = false
         // Each step gets its own guard. They share nothing but the throttle, and
         // one shared try meant a throwing token renewal skipped the runtime
-        // check outright -- which is exactly how a device sat on a stale binary
-        // while assets.lock had been naming a newer sha for hours.
+        // check outright.
         try {
             // Token renewal runs first. It is the one thing here with a hard
             // deadline: if the pairing token lapses, the sync dies and only a
@@ -64,20 +66,26 @@ object UpdateChecker {
             val release = withContext(Dispatchers.IO) { fetchLatestRelease(repo) }
             if (release != null && isNewer(release.tag, BuildConfig.VERSION_NAME)) {
                 notifyAvailable(context, release)
-                return
+                // An APK update is pending; the runtime check is deliberately
+                // skipped, but the pass is done, so still take the throttle.
+                completed = true
             }
         } catch (_: Exception) {
             // an unreachable GitHub must not hide a reachable runtime mirror
         }
-        try {
-            // The backend binary is released on its own schedule, apart from the
-            // APK. It is checked last and skipped while an APK update is pending:
-            // offering a 240 MB runtime download and then immediately asking for
-            // a reinstall of the app would be a bad hour.
-            checkRuntime(context)
-        } catch (_: Exception) {
-            // silent — update checks must never crash the app
+        if (!completed) {
+            try {
+                // The backend binary is released on its own schedule, apart from
+                // the APK. Offering a 240 MB runtime download and then
+                // immediately asking for a reinstall of the app would be a bad
+                // hour, so this only runs when no APK update is pending.
+                checkRuntime(context)
+                completed = true
+            } catch (_: Exception) {
+                // silent — update checks must never crash the app
+            }
         }
+        if (completed) Prefs.lastUpdateCheck = System.currentTimeMillis()
     }
 
     /**
