@@ -163,6 +163,18 @@
             android:layout_marginTop="4dp"
             android:text="@string/copy_diagnostics" />
 
+        <!-- Manual update check. The automatic pass runs once a day, which is the
+             right cadence for a 240 MB payload but no help when someone is
+             standing here wanting the newer build right now. This skips the
+             throttle, and the outcome is reported back rather than swallowed. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/checkUpdateButton"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/check_update" />
+
         <!-- Remote diagnostics. Off by default: turning this on puts an
              authenticated shell behind a token on the local network, so it is a
              deliberate switch the user controls rather than a compiled-in flag,

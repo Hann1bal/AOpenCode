@@ -70,6 +70,8 @@ class PeersActivity : AppCompatActivity() {
 
         binding.copyDiagnosticsButton.setOnClickListener { copyDiagnostics() }
 
+        binding.checkUpdateButton.setOnClickListener { runUpdateCheck() }
+
         binding.diagSwitch.setOnCheckedChangeListener { _, on -> setDiagnosticMode(on) }
         binding.diagRotateButton.setOnClickListener { rotateDiagToken() }
         binding.diagCopyButton.setOnClickListener { copyDiagToken() }
@@ -85,6 +87,24 @@ class PeersActivity : AppCompatActivity() {
 
         render()
         renderDiag()
+    }
+
+    /**
+     * A forced pass with the outcome surfaced. The scheduled check is silent by
+     * design; a button that stays silent after being pressed cannot be told
+     * apart from one that does nothing, so the result goes to a toast.
+     */
+    private fun runUpdateCheck() {
+        binding.checkUpdateButton.isEnabled = false
+        lifecycleScope.launch {
+            val result = try {
+                UpdateChecker.checkIfNeeded(this@PeersActivity, force = true)
+            } catch (e: Exception) {
+                "Update check failed (${e.javaClass.simpleName})"
+            }
+            binding.checkUpdateButton.isEnabled = true
+            Toast.makeText(this@PeersActivity, result, Toast.LENGTH_LONG).show()
+        }
     }
 
     /**

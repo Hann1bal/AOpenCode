@@ -42,10 +42,24 @@ object UpdateChecker {
     /** A release we could act on: which version, and where its APK actually is. */
     private data class Release(val tag: String, val apkUrl: String?, val apkBytes: Long)
 
-    suspend fun checkIfNeeded(context: Context) {
+    /**
+     * Runs the update checks.
+     *
+     * [force] skips the once-a-day throttle. Without it a manual control is
+     * pointless: pressing it an hour after a pass that failed for a transient
+     * reason does nothing at all, which is indistinguishable from a broken
+     * button.
+     *
+     * Returns a one-line summary. The scheduled caller ignores it; someone who
+     * just pressed a button did not, and silence after a tap reads as failure.
+     */
+    suspend fun checkIfNeeded(context: Context, force: Boolean = false): String {
         val repo = BuildConfig.UPDATE_REPO
-        if (repo.isBlank()) return
-        if (System.currentTimeMillis() - Prefs.lastUpdateCheck < CHECK_INTERVAL_MS) return
+        if (repo.isBlank()) return "No update repository configured in this build"
+        if (!force && System.currentTimeMillis() - Prefs.lastUpdateCheck < CHECK_INTERVAL_MS) {
+            return "Skipped: already checked within the last day"
+        }
+        val notes = mutableListOf<String>()
         // The throttle is written at the end, not up front. Setting it before the
         // work meant a pass that never reached the runtime check still consumed
         // the day: the device stayed on a stale binary and would not try again
@@ -69,23 +83,29 @@ object UpdateChecker {
                 // An APK update is pending; the runtime check is deliberately
                 // skipped, but the pass is done, so still take the throttle.
                 completed = true
+                notes += "app ${release.tag} available"
+            } else {
+                notes += "app current (${BuildConfig.VERSION_NAME})"
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             // an unreachable GitHub must not hide a reachable runtime mirror
+            notes += "app check failed (${e.javaClass.simpleName})"
         }
         if (!completed) {
-            try {
+            notes += try {
                 // The backend binary is released on its own schedule, apart from
                 // the APK. Offering a 240 MB runtime download and then
                 // immediately asking for a reinstall of the app would be a bad
                 // hour, so this only runs when no APK update is pending.
                 checkRuntime(context)
-                completed = true
-            } catch (_: Exception) {
+            } catch (e: Exception) {
                 // silent — update checks must never crash the app
+                "runtime check failed (${e.javaClass.simpleName})"
             }
+            completed = true
         }
         if (completed) Prefs.lastUpdateCheck = System.currentTimeMillis()
+        return notes.joinToString(" · ").replaceFirstChar { it.uppercaseChar() }
     }
 
     /**
@@ -205,13 +225,17 @@ object UpdateChecker {
      * disk is stale. Compared by sha256, not by version string, so a rebuild
      * that produced identical bytes does not ask for 240 MB again.
      */
-    private suspend fun checkRuntime(context: Context) {
-        val manifest = withContext(Dispatchers.IO) { RuntimeInstaller.fetchManifest() } ?: return
+    private suspend fun checkRuntime(context: Context): String {
+        val manifest = withContext(Dispatchers.IO) { RuntimeInstaller.fetchManifest() }
+            ?: return "runtime manifest unreachable (${RuntimeInstaller.lastError ?: "no response"})"
         val installed = RuntimeInstaller.installedSha(context)
         // Empty means nothing is installed yet; the activity's own gate covers
         // that case with a progress bar, which beats a notification.
-        if (installed.isEmpty() || installed == manifest.sha256) return
+        if (installed.isEmpty()) return "no runtime installed yet"
+        if (installed == manifest.sha256) return "runtime up to date (${installed.take(8)})"
         notifyRuntime(context, manifest.size)
+        return "runtime update available (%.1f MB) — tap the notification"
+            .format(manifest.size / 1048576.0)
     }
 
     private fun notifyRuntime(context: Context, sizeBytes: Long) {

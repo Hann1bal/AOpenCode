@@ -76,6 +76,7 @@
     <string name="engine_info">UI engine: %1$s</string>
     <string name="workspace_label">Project folder: %1$s</string>
     <string name="copy_diagnostics">Copy diagnostics</string>
+    <string name="check_update">Check for updates now</string>
     <string name="diagnostics_copied">Diagnostics copied — paste it wherever you are reporting the issue</string>
 
     <!-- Runtime gate: the backend binary is fetched on first launch instead of
