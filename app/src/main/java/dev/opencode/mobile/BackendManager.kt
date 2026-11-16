@@ -12,6 +12,7 @@ import java.net.ServerSocket
 import java.net.URI
 import java.net.URL
 import java.util.concurrent.TimeUnit
+import org.json.JSONObject
 
 /**
  * Owns the bundled `opencode serve` process.
@@ -288,6 +289,14 @@ object BackendManager {
         PeerStore.active()?.let { peer ->
             URI(peer.baseUrl).host?.let { noProxy.add(it) }
         }
+        // The proxy exists for one reason: musl has no resolv.conf on Android, so
+        // a *name* has to be resolved through Android's resolver instead. An IP
+        // literal needs no resolution at all, so sending one through the proxy
+        // buys nothing and adds a hop that can mangle or refuse the request.
+        // Provider addresses written as literals therefore bypass it.
+        providerHosts(ctx)
+            .filter { isIpLiteral(it) && it !in noProxy }
+            .forEach { noProxy.add(it) }
         val noProxyList = noProxy.joinToString(",")
         env["NO_PROXY"] = noProxyList
         env["no_proxy"] = noProxyList
@@ -300,6 +309,46 @@ object BackendManager {
             env["OPENCODE_UPSTREAM_ID"] = peer.id
         }
     }
+
+    /**
+     * Hosts named by the configured providers, read from each provider's
+     * `settings.baseURL` in the opencode config.
+     *
+     * The proxy exclusion list has to name concrete hosts, and the app does not
+     * otherwise know where the user's provider lives.
+     */
+    private fun providerHosts(ctx: Context): List<String> {
+        val file = File(homeDir(ctx), ".config/opencode/opencode.json")
+        if (!file.isFile) return emptyList()
+        return try {
+            val providers = JSONObject(file.readText()).optJSONObject("providers") ?: return emptyList()
+            providers.keys()
+                .asSequence()
+                .mapNotNull { name ->
+                    providers.optJSONObject(name)
+                        ?.optJSONObject("settings")
+                        ?.optString("baseURL")
+                        ?.takeIf { it.isNotBlank() }
+                }
+                .mapNotNull { hostOf(it) }
+                .filter { it.isNotBlank() }
+                .toList()
+        } catch (e: Exception) {
+            // A malformed config is the engine's problem to report; building an
+            // environment must not crash on it.
+            emptyList()
+        }
+    }
+
+    private fun hostOf(url: String): String? = try {
+        URI(url).host
+    } catch (e: Exception) {
+        null
+    }
+
+    /** True for a dotted-quad or an IPv6 literal; false for a hostname. */
+    private fun isIpLiteral(host: String): Boolean =
+        host.contains(':') || host.matches(Regex("""\d{1,3}(\.\d{1,3}){3}"""))
 
     /** Launch the backend. Returns the port it is bound to. */
     @Synchronized
